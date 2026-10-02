@@ -1,0 +1,114 @@
+.main-menu {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    background: #0a0a0f;
+    font-family: system-ui, sans-serif;
+    color: #fff;
+}
+
+.main-menu-title {
+    font-size: 48px;
+    font-weight: 800;
+    letter-spacing: 0.15em;
+    margin-bottom: 12px;
+}
+
+.main-menu-dial-label {
+    font-size: 16px;
+    opacity: 0.8;
+}
+
+.main-menu-dial-row {
+    display: flex;
+    gap: 10px;
+}
+
+.main-menu-dial-button {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    border: 2px solid #3a3a46;
+    background: #1e1e26;
+    color: #fff;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.main-menu-dial-button:hover {
+    border-color: #4fc3ff;
+}
+
+.main-menu-dial-button.active {
+    border-color: #4fc3ff;
+    background: #223344;
+}
+
+.main-menu-module-button {
+    min-width: 90px;
+    height: 48px;
+    padding: 0 16px;
+    border-radius: 8px;
+    border: 2px solid #3a3a46;
+    background: #1e1e26;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.main-menu-module-button:hover {
+    border-color: #4fc3ff;
+}
+
+.main-menu-module-button.active {
+    border-color: #4fc3ff;
+    background: #223344;
+}
+
+.main-menu-start {
+    margin-top: 16px;
+    padding: 14px 40px;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    border-radius: 8px;
+    border: none;
+    background: #4fc3ff;
+    color: #0a0a0f;
+    cursor: pointer;
+    transition: transform 0.1s;
+}
+
+.main-menu-start:hover {
+    transform: translateY(-2px);
+}
+
+.main-menu-currency {
+    font-size: 16px;
+    color: #4fc3ff;
+    font-weight: 700;
+}
+
+.main-menu-hub-button {
+    margin-top: 8px;
+    padding: 10px 32px;
+    font-size: 14px;
+    font-weight: 700;
+    border-radius: 8px;
+    border: 2px solid #3a3a46;
+    background: transparent;
+    color: #fff;
+    cursor: pointer;
+}
+
+.main-menu-hub-button:hover {
+    border-color: #4fc3ff;
+}

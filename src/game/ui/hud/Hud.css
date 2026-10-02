@@ -1,0 +1,57 @@
+.hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    padding: 16px;
+    font-family: system-ui, sans-serif;
+    color: #fff;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.hud-health {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.hud-level {
+    font-size: 14px;
+    margin-top: 4px;
+    opacity: 0.85;
+}
+
+.hud-xp-bar {
+    margin-top: 4px;
+    width: 220px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.hud-xp-fill {
+    height: 100%;
+    background: #4fc3ff;
+    transition: width 0.15s ease-out;
+}
+
+.hud-death {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+.hud-ammo {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 8px;
+}
+
+.hud-ammo-hint {
+    font-size: 12px;
+    font-weight: 400;
+    opacity: 0.75;
+}

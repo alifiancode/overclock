@@ -1,0 +1,59 @@
+.upgrade-choice {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    background: rgba(0, 0, 0, 0.7);
+    font-family: system-ui, sans-serif;
+    color: #fff;
+}
+
+.upgrade-choice-title {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+.upgrade-choice-options {
+    display: flex;
+    gap: 20px;
+}
+
+.upgrade-choice-card {
+    width: 200px;
+    padding: 20px;
+    background: #1e1e26;
+    border: 2px solid #3a3a46;
+    border-radius: 8px;
+    color: #fff;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.1s;
+}
+
+.upgrade-choice-card:hover {
+    border-color: #4fc3ff;
+    transform: translateY(-4px);
+}
+
+.upgrade-choice-category {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0.6;
+    margin-bottom: 8px;
+}
+
+.upgrade-choice-name {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 6px;
+}
+
+.upgrade-choice-desc {
+    font-size: 14px;
+    opacity: 0.85;
+}
