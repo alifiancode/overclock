@@ -1,27 +1,84 @@
-import { Canvas } from '@react-three/fiber';
-import { Stats, Sky } from '@react-three/drei';
+import { useEffect, useLayoutEffect } from 'react';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Stats } from '@react-three/drei';
+import type { PerspectiveCamera } from 'three';
 import { Player } from '../entities/Player.tsx';
 import { CameraRig } from './CameraRig.tsx';
 import { Enemies } from '../entities/Enemies.tsx';
 import { Bot } from '../entities/Bot.tsx';
 import { Effects } from './Effects.tsx';
-import { Ground } from './Ground.tsx';
+import { Ground, Water } from './Ground.tsx';
 import { ArenaDressing } from './ArenaDressing.tsx';
 import { Buildings } from './Buildings.tsx';
-import { Lighting } from '../entities/Lighting.tsx';
+import { Lighting, SceneLights } from '../entities/Lighting.tsx';
 import { Pickups } from '../entities/Pickups.tsx';
 import { Projectiles } from '../entities/Projectiles.tsx';
+import { pendingTaskCount, runTasks } from '../systems/buildQueue.ts';
+import { resetFx, updateFx } from '../systems/fxState.ts';
+
+const FOG_COLOR = '#6c8470';
+const FOG_NEAR = 30;
+const FOG_FAR = 92;
+const SLOW_FRAME = 0.03;
+const BUSY_QUEUE = 30;
+const BUDGET_SLOW = 0.6;
+const BUDGET_BUSY = 3.2;
+const BUDGET_NORMAL = 2.2;
+
+function BuildDriver() {
+    useFrame((_, delta) => {
+        const pending = pendingTaskCount();
+        if (pending === 0) return;
+        runTasks(delta > SLOW_FRAME ? BUDGET_SLOW : pending > BUSY_QUEUE ? BUDGET_BUSY : BUDGET_NORMAL);
+    });
+    return null;
+}
+
+function FxDriver() {
+    const width = useThree((state) => state.size.width);
+    const height = useThree((state) => state.size.height);
+    const dpr = useThree((state) => state.viewport.dpr);
+
+    useLayoutEffect(() => {
+        resetFx();
+        return () => resetFx();
+    }, []);
+
+    useFrame(({ camera, clock }, delta) => {
+        camera.updateMatrixWorld();
+        updateFx(camera as PerspectiveCamera, width * dpr, height * dpr, clock.elapsedTime, delta);
+    });
+    return null;
+}
+
+function Warmup() {
+    const gl = useThree((state) => state.gl);
+    const scene = useThree((state) => state.scene);
+    const camera = useThree((state) => state.camera);
+
+    useEffect(() => {
+        let cancelled = false;
+        const id = requestAnimationFrame(() => {
+            if (cancelled) return;
+            void gl.compileAsync(scene, camera).catch(() => undefined);
+        });
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(id);
+        };
+    }, [gl, scene, camera]);
+    return null;
+}
 
 export function Scene() {
     return (
-        <Canvas shadows dpr={1} gl={{ antialias: false }} camera={{ position: [10, 12, 10], fov: 40 }}>
-            <fog attach="fog" args={['#6b7080', 45, 165]} />
-            <ambientLight intensity={0.62} color="#9a96a8" />
-            <directionalLight position={[8, 15, 5]} intensity={1.35} color="#d8caa0" castShadow shadow-mapSize={[1024, 1024]} />
-            <hemisphereLight args={['#8fa8c8', '#4a4030', 0.45]} />
-            <Sky sunPosition={[8, 15, 5]} turbidity={10} rayleigh={2} mieCoefficient={0.01} mieDirectionalG={0.9} />
+        <Canvas shadows dpr={1} gl={{ antialias: false, powerPreference: 'high-performance' }} camera={{ position: [10, 12, 10], fov: 40, near: 0.5, far: 260 }}>
+            <color attach="background" args={[FOG_COLOR]} />
+            <fog attach="fog" args={[FOG_COLOR, FOG_NEAR, FOG_FAR]} />
+            <SceneLights />
 
             <Ground />
+            <Water />
             <ArenaDressing />
             <Buildings />
             <Lighting />
@@ -33,6 +90,9 @@ export function Scene() {
             <Projectiles />
             <Bot />
             <Effects />
+            <BuildDriver />
+            <FxDriver />
+            <Warmup />
             <Stats />
         </Canvas>
     );

@@ -1,5 +1,6 @@
 import { Vector3 } from 'three';
 import { addXp } from '../state/world.ts';
+import { PATH_MAX } from '../systems/localPath.ts';
 import { maybeDropPickup } from '../systems/pickups.ts';
 
 export type EnemyArchetype = 'rusher' | 'ranged' | 'bruiser' | 'exploder' | 'spitter' | 'flyer';
@@ -157,6 +158,31 @@ export type Enemy = {
     escapeAnchorZ: number;
     escapeDirX: number;
     escapeDirZ: number;
+    lockX: number;
+    lockZ: number;
+    lockTimer: number;
+    wayX: number;
+    wayZ: number;
+    wayTimer: number;
+    path: Float32Array;
+    pathLen: number;
+    pathIdx: number;
+    pathTimer: number;
+    pathGoalX: number;
+    pathGoalZ: number;
+    pathFloor: number;
+    pathBuilding: number;
+    planTimer: number;
+    avoidX: number;
+    avoidZ: number;
+    probeTimer: number;
+    headingX: number;
+    headingZ: number;
+    wading: number;
+    facing: number;
+    moving: boolean;
+    stepTime: number;
+    phase: number;
 };
 
 export const enemies: Enemy[] = [];
@@ -185,6 +211,31 @@ export function spawnEnemy(archetype: EnemyArchetype, position: Vector3, healthM
         escapeAnchorZ: position.z,
         escapeDirX: 0,
         escapeDirZ: 0,
+        lockX: 0,
+        lockZ: 0,
+        lockTimer: 0,
+        wayX: 0,
+        wayZ: 0,
+        wayTimer: 0,
+        path: new Float32Array(PATH_MAX * 2),
+        pathLen: 0,
+        pathIdx: 0,
+        pathTimer: 0,
+        pathGoalX: 0,
+        pathGoalZ: 0,
+        pathFloor: 0,
+        pathBuilding: -1,
+        planTimer: 0,
+        avoidX: 0,
+        avoidZ: 0,
+        probeTimer: Math.random() * 0.3,
+        headingX: 0,
+        headingZ: 1,
+        wading: 0,
+        facing: 0,
+        moving: false,
+        stepTime: 0,
+        phase: Math.random() * 6.28,
     };
     enemies.push(enemy);
     return enemy;

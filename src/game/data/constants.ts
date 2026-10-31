@@ -1,6 +1,16 @@
 export const PLAYER_MOVE_SPEED = 8;
-export const ARENA_HALF_SIZE = 96;
-export const PLAYABLE_RADIUS = 90; 
+
+export const WORLD_SIZE = 576;
+export const WORLD_HALF = WORLD_SIZE / 2;
+export const CHUNK_SIZE = 64;
+export const CHUNKS_PER_AXIS = WORLD_SIZE / CHUNK_SIZE;
+export const STREET_PITCH = 36;
+export const ROAD_HALF_WIDTH = 4.6;
+export const SIDEWALK_WIDTH = 1.5;
+export const WATER_LEVEL = -0.5;
+export const CITY_LEVEL = 0.9;
+export const VIEW_RADIUS = 78;
+export const DESPAWN_RADIUS = 96;
 
 export const FLOOR_HEIGHT = 3.2;
 export const FLOOR_COUNT = 3;
@@ -11,7 +21,9 @@ export const PLAYER_Y_LERP = 0.15;
 
 export const CAMERA_OFFSET = { x: 10, y: 11, z: 10 };
 
-export const ENEMY_SPAWN_RADIUS = 62;
+export const ENEMY_SPAWN_RADIUS = 56;
+export const WATER_SLOW_PLAYER = 0.78;
+export const WATER_SLOW_ENEMY = 0.5;
 
 export const PLAYER_ATTACK_RANGE = 6;
 export const PLAYER_ATTACK_DAMAGE = 8;

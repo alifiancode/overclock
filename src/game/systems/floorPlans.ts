@@ -1,225 +1,394 @@
-import type { WallSegment, ZoneRect, FootprintResult, StairwellRect } from './buildingShapes.ts';
-import { zoneWidth, zoneDepth } from './buildingShapes.ts';
+import { rngChance, rngRange, type Rng } from './random.ts';
+import { cutSegment, expandRect, rectsOverlap, zoneArea, zoneDepth, zoneWidth, type FootprintResult, type WallSegment, type ZoneRect } from './buildingShapes.ts';
 
-export type RoomType = 'living' | 'kitchen' | 'bedroom' | 'bathroom' | 'storage' | 'entry' | 'office';
-export type Room = ZoneRect & { type: RoomType };
-export type FurniturePiece = {
-    kind: 'table' | 'shelf' | 'crate' | 'bed' | 'couch' | 'cratestack' | 'counter' | 'stove' | 'sink' | 'desk';
-    x: number;
-    z: number;
-    rotationY: number;
-    floor: number;
-};
+export type RoomType =
+    | 'living'
+    | 'kitchen'
+    | 'dining'
+    | 'bedroom'
+    | 'bathroom'
+    | 'storage'
+    | 'entry'
+    | 'office'
+    | 'hall'
+    | 'shop'
+    | 'utility'
+    | 'warehouse';
 
-export type FloorPlan = {
-    interiorWalls: WallSegment[];
-    rooms: Room[];
-};
+export type Usage = 'residential' | 'office' | 'shop' | 'warehouse';
+export type PlanTemplate = 'open' | 'bsp' | 'corridor' | 'suite';
 
-const DOORWAY_WIDTH = 1.4;
-const PARTITION_MARGIN = 0.5;
-const ENTRY_CLEARANCE = 1.9;
-const GRID_MIN_WIDTH = 11.5;
-const GRID_MIN_DEPTH = 13;
+export type Room = ZoneRect & { id: number; type: RoomType; floor: number; zone: number; fixed: boolean };
+export type Doorway = { x: number; z: number; along: 'x' | 'z'; width: number; roomA: number; roomB: number; floor: number };
+export type FloorPlan = { floor: number; template: PlanTemplate; rooms: Room[]; walls: WallSegment[]; doorways: Doorway[] };
 
-function wallWithDoorAlongX(z: number, xMin: number, xMax: number): WallSegment[] {
-    const mid = (xMin + xMax) / 2;
-    const half = DOORWAY_WIDTH / 2;
-    const segs: WallSegment[] = [];
-    if (mid - half > xMin) segs.push({ x1: xMin, z1: z, x2: mid - half, z2: z });
-    if (xMax > mid + half) segs.push({ x1: mid + half, z1: z, x2: xMax, z2: z });
-    return segs;
-}
+type Cut = { along: 'x' | 'z'; coord: number; lo: number; hi: number };
+type Anchor = { x: number; z: number };
+type Edge = { a: number; b: number; along: 'x' | 'z'; coord: number; lo: number; hi: number; weight: number };
 
-function wallWithDoorAlongZ(x: number, zMin: number, zMax: number): WallSegment[] {
-    const mid = (zMin + zMax) / 2;
-    const half = DOORWAY_WIDTH / 2;
-    const segs: WallSegment[] = [];
-    if (mid - half > zMin) segs.push({ x1: x, z1: zMin, x2: x, z2: mid - half });
-    if (zMax > mid + half) segs.push({ x1: x, z1: mid + half, x2: x, z2: zMax });
-    return segs;
-}
+export const DOORWAY_WIDTH = 1.3;
+const MIN_ROOM = 3.1;
+const STAIR_MARGIN = 0.75;
+const ANCHOR_CLEARANCE = 1.7;
 
-function neckToWall(neck: WallSegment): WallSegment[] {
-    if (neck.x1 === neck.x2) return wallWithDoorAlongZ(neck.x1, Math.min(neck.z1, neck.z2), Math.max(neck.z1, neck.z2));
-    return wallWithDoorAlongX(neck.z1, Math.min(neck.x1, neck.x2), Math.max(neck.x1, neck.x2));
-}
+type Context = { rng: Rng; stair: ZoneRect | null; anchors: Anchor[]; cuts: Cut[]; ignore: Anchor | null };
 
-function pickCut(lo: number, hi: number, stairLo: number, stairHi: number): number | null {
-    const stairAtHighEnd = (stairLo + stairHi) / 2 > (lo + hi) / 2;
-    const safeLo = stairAtHighEnd ? lo : stairHi + PARTITION_MARGIN;
-    const safeHi = stairAtHighEnd ? stairLo - PARTITION_MARGIN : hi;
-    const span = safeHi - safeLo;
-    if (span < 1.8) return null;
-    const t = 0.35 + Math.random() * 0.3;
-    return safeLo + span * t;
-}
-
-function gridPartition(main: ZoneRect, stair: StairwellRect): { walls: WallSegment[]; rooms: ZoneRect[] } | null {
-    if (zoneWidth(main) < GRID_MIN_WIDTH || zoneDepth(main) < GRID_MIN_DEPTH) return null;
-    const xCut = pickCut(main.minX, main.maxX, stair.minX, stair.maxX);
-    const zCut = pickCut(main.minZ, main.maxZ, stair.minZ, stair.maxZ);
-    if (xCut === null || zCut === null) return null;
-    if (zCut - main.minZ < ENTRY_CLEARANCE + 1.5) return null;
-
-    const rooms: ZoneRect[] = [
-        { minX: main.minX, maxX: xCut, minZ: main.minZ, maxZ: zCut },
-        { minX: xCut, maxX: main.maxX, minZ: main.minZ, maxZ: zCut },
-        { minX: main.minX, maxX: xCut, minZ: zCut, maxZ: main.maxZ },
-        { minX: xCut, maxX: main.maxX, minZ: zCut, maxZ: main.maxZ },
-    ];
-
-    const walls: WallSegment[] = [
-        ...wallWithDoorAlongZ(xCut, main.minZ + ENTRY_CLEARANCE, zCut),
-        ...wallWithDoorAlongZ(xCut, zCut, main.maxZ),
-        ...wallWithDoorAlongX(zCut, main.minX, xCut),
-        ...wallWithDoorAlongX(zCut, xCut, main.maxX),
-    ];
-    return { walls, rooms };
-}
-
-type PlanTemplate = 'open' | 'split' | 'stripes';
-
-function pickStripeTemplate(): PlanTemplate {
-    const roll = Math.random();
-    if (roll < 0.12) return 'open';
-    if (roll < 0.55) return 'split';
-    return 'stripes';
-}
-
-function pickStripeCuts(lo: number, hi: number, stairLo: number, stairHi: number, template: PlanTemplate): number[] {
-    const stairAtHighEnd = (stairLo + stairHi) / 2 > (lo + hi) / 2;
-    const safeLo = stairAtHighEnd ? lo : stairHi + PARTITION_MARGIN;
-    const safeHi = stairAtHighEnd ? stairLo - PARTITION_MARGIN : hi;
-    const span = safeHi - safeLo;
-
-    if (template === 'stripes' && span >= 6) {
-        const t1 = 0.3 + Math.random() * 0.1;
-        const t2 = 0.62 + Math.random() * 0.12;
-        return [safeLo + span * t1, safeLo + span * t2];
+function distPointToCut(px: number, pz: number, cut: Cut): number {
+    if (cut.along === 'z') {
+        const z = Math.max(cut.lo, Math.min(cut.hi, pz));
+        return Math.hypot(px - cut.coord, pz - z);
     }
-    if (span < 1.6) return [];
-    const t = 0.35 + Math.random() * 0.3;
-    return [safeLo + span * t];
+    const x = Math.max(cut.lo, Math.min(cut.hi, px));
+    return Math.hypot(px - x, pz - cut.coord);
 }
 
-function slicesFromCuts(lo: number, hi: number, cuts: number[]): [number, number][] {
-    const bounds = [lo, ...cuts, hi];
-    const slices: [number, number][] = [];
-    for (let i = 0; i < bounds.length - 1; i++) slices.push([bounds[i], bounds[i + 1]]);
-    return slices;
-}
-
-function stripePartition(main: ZoneRect, stair: StairwellRect): { walls: WallSegment[]; rooms: ZoneRect[] } {
-    const elongatedInZ = zoneDepth(main) >= zoneWidth(main);
-    const longSpan = elongatedInZ ? zoneDepth(main) : zoneWidth(main);
-    const template: PlanTemplate = longSpan > 13 ? pickStripeTemplate() : Math.random() < 0.4 ? 'open' : 'split';
-    if (template === 'open') return { walls: [], rooms: [main] };
-
-    if (elongatedInZ) {
-        const cuts = pickStripeCuts(main.minZ, main.maxZ, stair.minZ, stair.maxZ, template);
-        if (cuts.length === 0) return { walls: [], rooms: [main] };
-        const rooms = slicesFromCuts(main.minZ, main.maxZ, cuts).map(([z0, z1]) => ({ minX: main.minX, maxX: main.maxX, minZ: z0, maxZ: z1 }));
-        const walls = cuts.flatMap((z) => wallWithDoorAlongX(z, main.minX, main.maxX));
-        return { walls, rooms };
-    }
-    const cuts = pickStripeCuts(main.minX, main.maxX, stair.minX, stair.maxX, template);
-    if (cuts.length === 0) return { walls: [], rooms: [main] };
-    const rooms = slicesFromCuts(main.minX, main.maxX, cuts).map(([x0, x1]) => ({ minX: x0, maxX: x1, minZ: main.minZ, maxZ: main.maxZ }));
-    const frontClearZ = Math.min(main.maxZ - 0.5, main.minZ + ENTRY_CLEARANCE);
-    const walls = cuts.flatMap((x) => wallWithDoorAlongZ(x, frontClearZ, main.maxZ));
-    return { walls, rooms };
-}
-
-function partitionMainZone(main: ZoneRect, stair: StairwellRect): { walls: WallSegment[]; rooms: ZoneRect[] } {
-    if (Math.random() < 0.7) {
-        const grid = gridPartition(main, stair);
-        if (grid) return grid;
-    }
-    return stripePartition(main, stair);
-}
-
-function assignRoomTypes(rects: ZoneRect[], floor: number): Room[] {
-    const withArea = rects.map((rect) => ({ rect, area: zoneWidth(rect) * zoneDepth(rect) }));
-    withArea.sort((a, b) => b.area - a.area);
-
-    const largestArea = withArea[0]?.area ?? 0;
-    return withArea.map(({ rect, area }, i) => {
-        let type: RoomType;
-        if (floor === 0) {
-            const pool: RoomType[] = ['living', 'kitchen', 'entry', 'storage'];
-            type = pool[Math.min(i, pool.length - 1)];
-        } else if (floor === 1) {
-            if (i === 0) type = 'bedroom';
-            else if (i > 0 && area < largestArea * 0.5) type = i === withArea.length - 1 ? 'bathroom' : 'office';
-            else type = 'bedroom';
-        } else {
-            type = 'storage';
+function cutConflicts(ctx: Context, cut: Cut): boolean {
+    const s = ctx.stair;
+    if (s) {
+        if (cut.along === 'z') {
+            if (cut.coord > s.minX - STAIR_MARGIN && cut.coord < s.maxX + STAIR_MARGIN && cut.hi > s.minZ - STAIR_MARGIN && cut.lo < s.maxZ + STAIR_MARGIN) return true;
+        } else if (cut.coord > s.minZ - STAIR_MARGIN && cut.coord < s.maxZ + STAIR_MARGIN && cut.hi > s.minX - STAIR_MARGIN && cut.lo < s.maxX + STAIR_MARGIN) {
+            return true;
         }
-        return { ...rect, type };
-    });
+    }
+    for (const a of ctx.anchors) {
+        if (a === ctx.ignore) continue;
+        if (distPointToCut(a.x, a.z, cut) < ANCHOR_CLEARANCE) return true;
+    }
+    return false;
 }
 
-export function buildFloorPlan(footprint: FootprintResult, stair: StairwellRect, floor: number): FloorPlan {
+function bsp(ctx: Context, rect: ZoneRect, target: number, leaves: ZoneRect[], depth: number) {
+    const w = zoneWidth(rect);
+    const d = zoneDepth(rect);
+    const canX = w >= MIN_ROOM * 2;
+    const canZ = d >= MIN_ROOM * 2;
+    if ((!canX && !canZ) || w * d <= target || depth > 5 || (depth > 0 && ctx.rng() < 0.07)) {
+        leaves.push(rect);
+        return;
+    }
+    let first: 'x' | 'z' = w > d * 1.15 ? 'x' : d > w * 1.15 ? 'z' : ctx.rng() < 0.5 ? 'x' : 'z';
+    if (first === 'x' && !canX) first = 'z';
+    if (first === 'z' && !canZ) first = 'x';
+    const order: ('x' | 'z')[] = first === 'x' ? ['x', 'z'] : ['z', 'x'];
+    for (const axis of order) {
+        if (axis === 'x' && !canX) continue;
+        if (axis === 'z' && !canZ) continue;
+        for (let attempt = 0; attempt < 7; attempt++) {
+            const t = rngRange(ctx.rng, 0.28, 0.72);
+            if (axis === 'x') {
+                const c = rect.minX + MIN_ROOM + (w - MIN_ROOM * 2) * t;
+                const cut: Cut = { along: 'z', coord: c, lo: rect.minZ, hi: rect.maxZ };
+                if (cutConflicts(ctx, cut)) continue;
+                ctx.cuts.push(cut);
+                bsp(ctx, { minX: rect.minX, maxX: c, minZ: rect.minZ, maxZ: rect.maxZ }, target, leaves, depth + 1);
+                bsp(ctx, { minX: c, maxX: rect.maxX, minZ: rect.minZ, maxZ: rect.maxZ }, target, leaves, depth + 1);
+                return;
+            }
+            const c = rect.minZ + MIN_ROOM + (d - MIN_ROOM * 2) * t;
+            const cut: Cut = { along: 'x', coord: c, lo: rect.minX, hi: rect.maxX };
+            if (cutConflicts(ctx, cut)) continue;
+            ctx.cuts.push(cut);
+            bsp(ctx, { minX: rect.minX, maxX: rect.maxX, minZ: rect.minZ, maxZ: c }, target, leaves, depth + 1);
+            bsp(ctx, { minX: rect.minX, maxX: rect.maxX, minZ: c, maxZ: rect.maxZ }, target, leaves, depth + 1);
+            return;
+        }
+    }
+    leaves.push(rect);
+}
+
+function corridorSplit(ctx: Context, zone: ZoneRect, hallWidth: number, centerOn: number | null): { hall: ZoneRect; sides: ZoneRect[] } | null {
+    const w = zoneWidth(zone);
+    const d = zoneDepth(zone);
+    const alongZ = d >= w;
+    const span = alongZ ? w : d;
+    if (span < MIN_ROOM * 2 + hallWidth) return null;
+    const lo = alongZ ? zone.minX : zone.minZ;
+    for (let attempt = 0; attempt < 10; attempt++) {
+        let c0: number;
+        if (attempt === 0 && centerOn !== null && alongZ) {
+            c0 = Math.max(lo + MIN_ROOM, Math.min(lo + span - MIN_ROOM - hallWidth, centerOn - hallWidth / 2));
+        } else {
+            c0 = lo + MIN_ROOM + (span - MIN_ROOM * 2 - hallWidth) * rngRange(ctx.rng, 0.25, 0.75);
+        }
+        const c1 = c0 + hallWidth;
+        const cutA: Cut = alongZ ? { along: 'z', coord: c0, lo: zone.minZ, hi: zone.maxZ } : { along: 'x', coord: c0, lo: zone.minX, hi: zone.maxX };
+        const cutB: Cut = alongZ ? { along: 'z', coord: c1, lo: zone.minZ, hi: zone.maxZ } : { along: 'x', coord: c1, lo: zone.minX, hi: zone.maxX };
+        const saved = ctx.ignore;
+        if (attempt === 0 && centerOn !== null && alongZ) ctx.ignore = ctx.anchors.find((a) => Math.abs(a.x - centerOn) < 0.01) ?? null;
+        const bad = cutConflicts(ctx, cutA) || cutConflicts(ctx, cutB);
+        ctx.ignore = saved;
+        if (bad) continue;
+        ctx.cuts.push(cutA, cutB);
+        if (alongZ) {
+            return {
+                hall: { minX: c0, maxX: c1, minZ: zone.minZ, maxZ: zone.maxZ },
+                sides: [
+                    { minX: zone.minX, maxX: c0, minZ: zone.minZ, maxZ: zone.maxZ },
+                    { minX: c1, maxX: zone.maxX, minZ: zone.minZ, maxZ: zone.maxZ },
+                ],
+            };
+        }
+        return {
+            hall: { minX: zone.minX, maxX: zone.maxX, minZ: c0, maxZ: c1 },
+            sides: [
+                { minX: zone.minX, maxX: zone.maxX, minZ: zone.minZ, maxZ: c0 },
+                { minX: zone.minX, maxX: zone.maxX, minZ: c1, maxZ: zone.maxZ },
+            ],
+        };
+    }
+    return null;
+}
+
+function findEdges(rooms: Room[], minOverlap: number): Edge[] {
+    const edges: Edge[] = [];
+    for (let i = 0; i < rooms.length; i++) {
+        for (let j = i + 1; j < rooms.length; j++) {
+            const a = rooms[i];
+            const b = rooms[j];
+            const zlo = Math.max(a.minZ, b.minZ);
+            const zhi = Math.min(a.maxZ, b.maxZ);
+            const xlo = Math.max(a.minX, b.minX);
+            const xhi = Math.min(a.maxX, b.maxX);
+            if (zhi - zlo >= minOverlap) {
+                if (Math.abs(a.maxX - b.minX) < 0.01) edges.push({ a: i, b: j, along: 'z', coord: a.maxX, lo: zlo, hi: zhi, weight: 0 });
+                else if (Math.abs(b.maxX - a.minX) < 0.01) edges.push({ a: i, b: j, along: 'z', coord: a.minX, lo: zlo, hi: zhi, weight: 0 });
+            }
+            if (xhi - xlo >= minOverlap) {
+                if (Math.abs(a.maxZ - b.minZ) < 0.01) edges.push({ a: i, b: j, along: 'x', coord: a.maxZ, lo: xlo, hi: xhi, weight: 0 });
+                else if (Math.abs(b.maxZ - a.minZ) < 0.01) edges.push({ a: i, b: j, along: 'x', coord: a.minZ, lo: xlo, hi: xhi, weight: 0 });
+            }
+        }
+    }
+    return edges;
+}
+
+function find(parent: number[], i: number): number {
+    while (parent[i] !== i) {
+        parent[i] = parent[parent[i]];
+        i = parent[i];
+    }
+    return i;
+}
+
+function doorRect(along: 'x' | 'z', coord: number, center: number, width: number): ZoneRect {
+    const h = width / 2 + 0.2;
+    return along === 'z' ? { minX: coord - 0.9, maxX: coord + 0.9, minZ: center - h, maxZ: center + h } : { minX: center - h, maxX: center + h, minZ: coord - 0.9, maxZ: coord + 0.9 };
+}
+
+function placeDoor(rng: Rng, edge: Edge, stair: ZoneRect | null, taken: Doorway[], mustPlace: boolean): { center: number; width: number } | null {
+    const overlap = edge.hi - edge.lo;
+    const width = Math.min(DOORWAY_WIDTH, overlap - 0.4);
+    if (width < 0.9) return null;
+    const lo = edge.lo + width / 2 + 0.2;
+    const hi = edge.hi - width / 2 - 0.2;
+    const stairBox = stair ? expandRect(stair, 0.35) : null;
+    let fallback: number | null = null;
+    for (let attempt = 0; attempt < 12; attempt++) {
+        const center = hi - lo < 0.1 ? (edge.lo + edge.hi) / 2 : rngRange(rng, lo, hi);
+        fallback = center;
+        const box = doorRect(edge.along, edge.coord, center, width);
+        if (stairBox && rectsOverlap(box, stairBox)) continue;
+        let clash = false;
+        for (const t of taken) {
+            if (rectsOverlap(box, doorRect(t.along, t.along === 'z' ? t.x : t.z, t.along === 'z' ? t.z : t.x, t.width), -0.1)) {
+                clash = true;
+                break;
+            }
+        }
+        if (clash) continue;
+        return { center, width };
+    }
+    return mustPlace && fallback !== null ? { center: fallback, width } : null;
+}
+
+function typeBucket(usage: Usage, floor: number): RoomType[] {
+    if (usage === 'office') {
+        return floor === 0 ? ['entry', 'office', 'office', 'kitchen', 'storage', 'office'] : ['office', 'office', 'office', 'kitchen', 'office', 'storage'];
+    }
+    if (usage === 'shop') {
+        return floor === 0 ? ['shop', 'storage', 'office', 'utility', 'shop'] : ['bedroom', 'living', 'kitchen', 'bedroom', 'office', 'storage'];
+    }
+    if (usage === 'warehouse') return ['warehouse', 'office', 'storage', 'utility', 'warehouse'];
+    return floor === 0 ? ['living', 'kitchen', 'dining', 'bedroom', 'office', 'storage'] : ['bedroom', 'living', 'bedroom', 'kitchen', 'office', 'bedroom', 'storage'];
+}
+
+function assignTypes(rng: Rng, rooms: Room[], floor: number, usage: Usage, frontRoom: number) {
+    const free = rooms.filter((r) => !r.fixed).sort((a, b) => zoneArea(b) - zoneArea(a));
+    if (free.length === 0) return;
+    if (free.length === 1) {
+        free[0].type = typeBucket(usage, floor)[0];
+        return;
+    }
+    const bucket = typeBucket(usage, floor);
+    let bath: Room | null = null;
+    if (free.length >= 3 && usage !== 'warehouse') {
+        bath = free[free.length - 1];
+        bath.type = 'bathroom';
+        free.pop();
+    }
+    if (free.length >= 5 && usage !== 'warehouse' && rngChance(rng, 0.65)) {
+        const second = free[free.length - 1];
+        second.type = rngChance(rng, 0.5) ? 'bathroom' : 'storage';
+        free.pop();
+    }
+    for (let i = 0; i < free.length; i++) free[i].type = i < bucket.length ? bucket[i] : bucket[1 + Math.floor(rng() * (bucket.length - 1))];
+    if (free.length > 2 && rngChance(rng, 0.3)) {
+        const a = 1 + Math.floor(rng() * (free.length - 1));
+        const b = 1 + Math.floor(rng() * (free.length - 1));
+        const tmp = free[a].type;
+        free[a].type = free[b].type;
+        free[b].type = tmp;
+    }
+    if (floor === 0 && frontRoom >= 0) {
+        const fr = rooms[frontRoom];
+        if (!fr.fixed && usage === 'residential' && fr.type !== 'living' && zoneArea(fr) < 24) fr.type = 'entry';
+        if (!fr.fixed && usage === 'residential' && fr.type === 'bathroom') fr.type = 'entry';
+    }
+}
+
+export type FloorPlanOptions = {
+    floor: number;
+    floors: number;
+    usage: Usage;
+    stair: ZoneRect | null;
+    anchors: Anchor[];
+    frontDoor: Anchor | null;
+};
+
+function chooseTemplate(rng: Rng, floor: number, usage: Usage, mainArea: number): PlanTemplate {
+    const roll = rng();
+    if (usage === 'warehouse') return roll < 0.8 ? 'open' : 'bsp';
+    if (usage === 'shop' && floor === 0) return roll < 0.45 ? 'open' : roll < 0.8 ? 'bsp' : 'corridor';
+    if (mainArea < 110) return roll < 0.18 ? 'open' : 'bsp';
+    if (floor === 0) return roll < 0.14 ? 'open' : roll < 0.58 ? 'bsp' : roll < 0.9 ? 'corridor' : 'suite';
+    return roll < 0.1 ? 'open' : roll < 0.4 ? 'bsp' : roll < 0.85 ? 'corridor' : 'suite';
+}
+
+export function buildFloorPlan(rng: Rng, footprint: FootprintResult, opts: FloorPlanOptions): FloorPlan {
+    const ctx: Context = { rng, stair: opts.stair, anchors: opts.floor === 0 ? opts.anchors : [], cuts: [], ignore: null };
     const main = footprint.zones[0];
-    const { walls: mainWalls, rooms: mainRects } = partitionMainZone(main, stair);
-    const interiorWalls: WallSegment[] = [...mainWalls];
-    const rects: ZoneRect[] = [...mainRects];
+    const template = chooseTemplate(rng, opts.floor, opts.usage, zoneArea(main));
+    const rooms: Room[] = [];
+    let nextId = 0;
+    const addRoom = (rect: ZoneRect, zone: number, type: RoomType, fixed: boolean) => {
+        rooms.push({ ...rect, id: nextId++, type, floor: opts.floor, zone, fixed });
+    };
+
+    const mainLeaves: ZoneRect[] = [];
+    let hallRect: ZoneRect | null = null;
+    let used: PlanTemplate = template;
+    if (template === 'open') {
+        mainLeaves.push(main);
+    } else if (template === 'corridor') {
+        const front = opts.floor === 0 ? opts.frontDoor : null;
+        const split = corridorSplit(ctx, main, rngRange(rng, 1.8, 2.3), front ? front.x : null);
+        if (split) {
+            hallRect = split.hall;
+            const target = rngRange(rng, 24, 40);
+            for (const side of split.sides) bsp(ctx, side, target, mainLeaves, 1);
+        } else {
+            used = 'bsp';
+            bsp(ctx, main, rngRange(rng, 22, 40), mainLeaves, 0);
+        }
+    } else if (template === 'suite') {
+        bsp(ctx, main, rngRange(rng, 55, 85), mainLeaves, 0);
+    } else {
+        bsp(ctx, main, rngRange(rng, 20, 38), mainLeaves, 0);
+    }
+    if (hallRect) addRoom(hallRect, 0, 'hall', true);
+    for (const leaf of mainLeaves) addRoom(leaf, 0, 'living', false);
 
     for (let i = 1; i < footprint.zones.length; i++) {
-        if (Math.random() < 0.75) interiorWalls.push(...neckToWall(footprint.necks[i - 1]));
-        rects.push(footprint.zones[i]);
+        const zone = footprint.zones[i];
+        const area = zoneArea(zone);
+        if (area <= 52 || used === 'open') {
+            addRoom(zone, i, 'living', false);
+        } else {
+            const leaves: ZoneRect[] = [];
+            bsp(ctx, zone, rngRange(rng, 30, 48), leaves, 0);
+            for (const leaf of leaves) addRoom(leaf, i, 'living', false);
+        }
     }
-    return { interiorWalls, rooms: assignRoomTypes(rects, floor) };
-}
 
-function insetRoom(room: ZoneRect, inset: number, frontClearance: number, frontZ: number): ZoneRect {
-    const touchesFront = Math.abs(room.minZ - frontZ) < 0.01;
-    return {
-        minX: room.minX + inset,
-        maxX: room.maxX - inset,
-        minZ: room.minZ + (touchesFront ? frontClearance : inset),
-        maxZ: room.maxZ - inset,
+    const neckCuts: Cut[] = footprint.necks.map((n) => (n.x1 === n.x2 ? { along: 'z', coord: n.x1, lo: Math.min(n.z1, n.z2), hi: Math.max(n.z1, n.z2) } : { along: 'x', coord: n.z1, lo: Math.min(n.x1, n.x2), hi: Math.max(n.x1, n.x2) }));
+    const allCuts = [...ctx.cuts, ...neckCuts];
+
+    let edges = findEdges(rooms, 1.7);
+    const parentCheck = (list: Edge[]): boolean => {
+        const parent = rooms.map((_, i) => i);
+        for (const e of list) parent[find(parent, e.a)] = find(parent, e.b);
+        const root = find(parent, 0);
+        return rooms.every((_, i) => find(parent, i) === root);
     };
-}
+    if (!parentCheck(edges)) edges = findEdges(rooms, 1.25);
 
-const ROOM_THEMES: Record<RoomType, FurniturePiece['kind'][]> = {
-    living: ['couch', 'table', 'shelf'],
-    kitchen: ['counter', 'counter', 'stove', 'crate'],
-    bedroom: ['bed', 'shelf', 'crate'],
-    bathroom: ['sink'],
-    storage: ['crate', 'cratestack', 'shelf'],
-    entry: ['shelf', 'crate'],
-    office: ['desk', 'shelf'],
-};
-
-const ROOM_MAX_PIECES: Record<RoomType, number> = {
-    living: 5,
-    kitchen: 4,
-    bedroom: 4,
-    bathroom: 1,
-    storage: 5,
-    entry: 3,
-    office: 3,
-};
-
-export function furnishRoom(room: Room, floor: number, stair: StairwellRect | null, frontZ: number): FurniturePiece[] {
-    const usable = insetRoom(room, 0.8, 1.6, frontZ);
-    const w = usable.maxX - usable.minX;
-    const d = usable.maxZ - usable.minZ;
-    if (w <= 0.6 || d <= 0.6) return [];
-
-    const maxForType = ROOM_MAX_PIECES[room.type];
-    const count = Math.max(1, Math.min(maxForType, Math.round((w * d) / 11)));
-    const kinds = ROOM_THEMES[room.type];
-    const pieces: FurniturePiece[] = [];
-    let attempts = 0;
-    while (pieces.length < count && attempts < count * 6) {
-        attempts++;
-        const x = usable.minX + Math.random() * w;
-        const z = usable.minZ + Math.random() * d;
-        if (stair && x > stair.minX - 0.5 && x < stair.maxX + 0.5 && z > stair.minZ - 0.5 && z < stair.maxZ + 0.5) continue;
-        pieces.push({ kind: kinds[Math.floor(Math.random() * kinds.length)], x, z, rotationY: Math.random() * Math.PI * 2, floor });
+    for (const e of edges) {
+        const ra = rooms[e.a];
+        const rb = rooms[e.b];
+        let w = rng();
+        if (ra.type === 'hall' || rb.type === 'hall') w -= 0.7;
+        if (ra.zone !== rb.zone) w -= 0.25;
+        e.weight = w;
     }
-    return pieces;
+    edges.sort((x, y) => x.weight - y.weight);
+
+    const parent = rooms.map((_, i) => i);
+    const chosen: Edge[] = [];
+    const spare: Edge[] = [];
+    for (const e of edges) {
+        const ra = find(parent, e.a);
+        const rb = find(parent, e.b);
+        if (ra !== rb) {
+            parent[ra] = rb;
+            chosen.push(e);
+        } else {
+            spare.push(e);
+        }
+    }
+    const treeCount = chosen.length;
+    for (const e of spare) {
+        if (rooms[e.a].type === 'hall' && rooms[e.b].type === 'hall') continue;
+        if (rngChance(rng, used === 'open' ? 0.5 : 0.24)) chosen.push(e);
+    }
+
+    const doorways: Doorway[] = [];
+    for (let ci = 0; ci < chosen.length; ci++) {
+        const e = chosen[ci];
+        const placed = placeDoor(rng, e, opts.stair, doorways, ci < treeCount);
+        if (!placed) continue;
+        doorways.push({
+            x: e.along === 'z' ? e.coord : placed.center,
+            z: e.along === 'z' ? placed.center : e.coord,
+            along: e.along,
+            width: placed.width,
+            roomA: e.a,
+            roomB: e.b,
+            floor: opts.floor,
+        });
+    }
+
+    const walls: WallSegment[] = [];
+    for (const cut of allCuts) {
+        const seg: WallSegment = cut.along === 'z' ? { x1: cut.coord, z1: cut.lo, x2: cut.coord, z2: cut.hi } : { x1: cut.lo, z1: cut.coord, x2: cut.hi, z2: cut.coord };
+        const gaps: { lo: number; hi: number }[] = [];
+        for (const d of doorways) {
+            if (d.along !== cut.along) continue;
+            const coord = d.along === 'z' ? d.x : d.z;
+            const center = d.along === 'z' ? d.z : d.x;
+            if (Math.abs(coord - cut.coord) > 0.01) continue;
+            if (center < cut.lo - 0.01 || center > cut.hi + 0.01) continue;
+            gaps.push({ lo: center - d.width / 2 - cut.lo, hi: center + d.width / 2 - cut.lo });
+        }
+        for (const piece of cutSegment(seg, gaps)) walls.push(piece);
+    }
+
+    let frontRoom = -1;
+    if (opts.frontDoor && opts.floor === 0) {
+        const p = opts.frontDoor;
+        frontRoom = rooms.findIndex((r) => p.x > r.minX - 0.01 && p.x < r.maxX + 0.01 && p.z > r.minZ - 0.01 && p.z < r.maxZ + 0.01 && !r.fixed);
+        if (frontRoom < 0) frontRoom = rooms.findIndex((r) => p.x > r.minX - 0.01 && p.x < r.maxX + 0.01 && p.z > r.minZ - 0.01 && p.z < r.maxZ + 0.01);
+    }
+    assignTypes(rng, rooms, opts.floor, opts.usage, frontRoom);
+    return { floor: opts.floor, template: used, rooms, walls, doorways };
 }

@@ -3,6 +3,11 @@ import { PLAYER_MAX_HEALTH, CAMERA_OFFSET, PLAYER_MOVE_SPEED, PLAYER_ATTACK_RANG
 import { xpToNextLevel } from '../systems/leveling.ts';
 import { WEAPONS, WEAPON_ORDER, STARTING_WEAPON, buildInitialAmmo, type WeaponId } from '../data/weapons.ts';
 import dialogueBank from '../../assets/dialogue.json';
+import { resetDoors } from '../systems/doors.ts';
+import { regenerateLoot } from '../systems/loot.ts';
+import { randomStart } from '../systems/obstacles.ts';
+import { createRng } from '../systems/random.ts';
+import { getTerrainHeight } from '../systems/terrain.ts';
 
 const CURRENCY_STORAGE_KEY = 'overclock-currency';
 const META_STORAGE_KEY = 'overclock-meta';
@@ -204,7 +209,10 @@ export function saveMeta() {
 }
 
 export function resetRun() {
-    world.player.position.set(0, -0.3, 0);
+    const seed = Math.floor(Math.random() * 2147483647);
+    const rng = createRng(seed);
+    const start = randomStart(rng);
+    world.player.position.set(start.x, getTerrainHeight(start.x, start.z) - 0.3, start.z);
     world.player.maxHealth = PLAYER_MAX_HEALTH + world.meta.maxHealthLevel * PERMANENT_MAX_HEALTH_PER_LEVEL;
     world.player.health = world.player.maxHealth;
     world.player.alive = true;
@@ -228,5 +236,7 @@ export function resetRun() {
     world.run.elapsedSeconds = 0;
     world.run.over = false;
     world.run.currencyEarned = 0;
+    resetDoors(seed ^ 0x5bd1e995);
+    regenerateLoot(start.x, start.z, rng);
     sayLine('run_start');
 }

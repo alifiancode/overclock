@@ -1,16 +1,29 @@
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import type { Group, Mesh, MeshStandardMaterial } from 'three';
+import type { Group, Mesh, MeshStandardMaterial, PointLight } from 'three';
 import { useKeyboard } from '../hooks/useKeyboard.ts';
 import { world, sayLine, startReload, updateReload, switchWeapon } from '../state/world.ts';
-import { PLAYABLE_RADIUS, PLAYER_MOVE_SPEED, PLAYER_Y_LERP } from '../data/constants.ts';
+import { PLAYER_MOVE_SPEED, PLAYER_Y_LERP, WATER_SLOW_PLAYER } from '../data/constants.ts';
 import { damageEnemy, type Enemy } from '../data/enemies.ts';
 import { findNearestInGrid, findEnemiesInGrid } from '../systems/spatialGrid.ts';
-import { resolvePropCollision, resolveFloor } from '../systems/obstacles.ts';
+import { resolveCollision, resolveFloor, type FloorInfo } from '../systems/obstacles.ts';
 import { fireProjectile } from '../systems/projectiles.ts';
 import { WEAPONS } from '../data/weapons.ts';
-import { resolveDoorCollision, tryToggleNearestDoor, updateDoors } from '../systems/doors.ts';
+import { resolveDoorCollision, tryToggleNearestDoor } from '../systems/doors.ts';
+import { hasLineOfSight } from '../systems/navigation.ts';
+import { fx } from '../systems/shaderFx.ts';
+import { wadeFactor, wadeLift, waterDepthAt } from '../systems/water.ts';
 
+const PLAYER_RADIUS = 0.3;
+const MAX_FRAME = 0.05;
+const MAX_SUBSTEP = 0.3;
+const WADE_SINK = 0.75;
+const LANTERN_COLOR = '#ffb45e';
+const LANTERN_OUTDOOR = 0.35;
+const LANTERN_INDOOR = 1;
+const LANTERN_INTENSITY = 24;
+const LANTERN_DISTANCE = 15;
+const LANTERN_DECAY = 1.6;
 const LOW_HEALTH_FRACTION = 0.25;
 const IDLE_SECONDS_BEFORE_LINE = 8;
 const ACCENT_COLOR = '#4f8fff';
@@ -45,8 +58,13 @@ const HIT_FLASH_DURATION = 0.2;
 const KNEE_BEND_AMOUNT = 0.9;
 const WALK_BOB_AMPLITUDE = 0.045;
 
+const floorInfo: FloorInfo = { y: 0, floor: 0, buildingIndex: -1 };
+const stepOut = { x: 0, z: 0 };
+const slideOut = { x: 0, z: 0 };
+
 export function Player() {
   const groupRef = useRef<Group>(null!);
+  const lanternRef = useRef<PointLight>(null!);
   const upperBodyRef = useRef<Group>(null!);
   const headRef = useRef<Group>(null!);
   const leftLegRef = useRef<Group>(null!);
@@ -72,8 +90,15 @@ export function Player() {
   const previousHealth = useRef(world.player.health);
   const hitFlashTimer = useRef(0);
 
-  useFrame((_, delta) => {
+  useLayoutEffect(() => {
+    groupRef.current.position.copy(world.player.position);
+    previousHealth.current = world.player.health;
+  }, []);
+
+  useFrame((_, rawDelta) => {
+    const delta = rawDelta > MAX_FRAME ? MAX_FRAME : rawDelta;
     if (!world.player.alive) {
+      lanternRef.current.intensity *= 0.9;
       if (deathAnimTimer.current < DEATH_ANIM_DURATION) {
         deathAnimTimer.current += delta;
         const progress = Math.min(1, deathAnimTimer.current / DEATH_ANIM_DURATION);
@@ -109,6 +134,8 @@ export function Player() {
     if (right) moveX += 1;
 
     const isMoving = moveX !== 0 || moveZ !== 0;
+    const depth = waterDepthAt(group.position.x, group.position.z);
+    const wade = wadeFactor(depth, WATER_SLOW_PLAYER);
     if (isMoving) {
       const length = Math.hypot(moveX, moveZ);
       moveX /= length;
@@ -120,36 +147,37 @@ export function Player() {
       const rotatedX = moveX * sin + moveZ * cos;
       const rotatedZ = -moveX * cos + moveZ * sin;
 
-      let nextX = group.position.x + rotatedX * world.player.moveSpeed * delta;
-      let nextZ = group.position.z + rotatedZ * world.player.moveSpeed * delta;
-
-      const distFromCenter = Math.hypot(nextX, nextZ);
-      if (distFromCenter > PLAYABLE_RADIUS) {
-        const scale = PLAYABLE_RADIUS / distFromCenter;
-        nextX *= scale;
-        nextZ *= scale;
+      let remaining = world.player.moveSpeed * wade * delta;
+      let cx = group.position.x;
+      let cz = group.position.z;
+      while (remaining > 1e-4) {
+        const step = remaining > MAX_SUBSTEP ? MAX_SUBSTEP : remaining;
+        remaining -= step;
+        resolveCollision(cx + rotatedX * step, cz + rotatedZ * step, world.player.currentFloor, PLAYER_RADIUS, stepOut);
+        resolveDoorCollision(stepOut.x, stepOut.z, PLAYER_RADIUS, slideOut);
+        cx = slideOut.x;
+        cz = slideOut.z;
       }
-      const propResolved = resolvePropCollision(nextX, nextZ, world.player.currentFloor);
-      const resolved = resolveDoorCollision(propResolved.x, propResolved.z);
-      group.position.x = resolved.x;
-      group.position.z = resolved.z;
+      group.position.x = cx;
+      group.position.z = cz;
       group.rotation.y = Math.atan2(rotatedX, rotatedZ);
     }
 
-    updateDoors(delta);
     if (keys.current.interactPressed) {
       keys.current.interactPressed = false;
       tryToggleNearestDoor(group.position.x, group.position.z);
     }
 
-    const floorResult = resolveFloor(group.position.x, group.position.z, world.player.currentFloor);
-    world.player.currentFloor = floorResult.floor;
-    world.player.buildingIndex = floorResult.buildingIndex;
-    group.position.y += (floorResult.y - 0.3 - group.position.y) * PLAYER_Y_LERP;
+    resolveFloor(group.position.x, group.position.z, world.player.currentFloor, floorInfo);
+    world.player.currentFloor = floorInfo.floor;
+    world.player.buildingIndex = floorInfo.buildingIndex;
+    const lift = floorInfo.buildingIndex < 0 ? wadeLift(waterDepthAt(group.position.x, group.position.z), WADE_SINK) : 0;
+    const yBlend = 1 - Math.pow(1 - PLAYER_Y_LERP, delta * 60);
+    group.position.y += (floorInfo.y - 0.3 + lift - group.position.y) * yBlend;
 
     world.player.position.copy(group.position);
     animTime.current += delta;
-    const speedRatio = world.player.moveSpeed / PLAYER_MOVE_SPEED;
+    const speedRatio = (world.player.moveSpeed / PLAYER_MOVE_SPEED) * wade;
     const strideFreq = Math.min(speedRatio, MAX_STRIDE_MULTIPLIER) * BASE_STRIDE_FREQ;
     const swing = isMoving ? Math.sin(animTime.current * strideFreq) * STRIDE_AMPLITUDE : 0;
 
@@ -177,8 +205,15 @@ export function Player() {
     leftForearmRef.current.rotation.x = ELBOW_REST_BEND;
     attackCooldown.current -= delta;
 
+    const lantern = lanternRef.current;
+    const flicker = 0.95 + Math.sin(animTime.current * 13) * 0.025 + Math.sin(animTime.current * 31.7) * 0.025;
+    lantern.intensity = LANTERN_INTENSITY * (LANTERN_OUTDOOR + (LANTERN_INDOOR - LANTERN_OUTDOOR) * fx.uIndoor.value) * flicker;
+
     if (attackCooldown.current <= 0) {
-      const sameSpace = (e: Enemy) => e.currentBuildingIndex === world.player.buildingIndex && e.currentFloor === world.player.currentFloor;
+      const sameSpace = (e: Enemy) =>
+        e.currentBuildingIndex === world.player.buildingIndex &&
+        e.currentFloor === world.player.currentFloor &&
+        hasLineOfSight(group.position.x, group.position.z, e.position.x, e.position.z, e.currentBuildingIndex, e.currentFloor);
       const target = findNearestInGrid(group.position, world.player.attackRange, sameSpace);
       if (target) {
         const distance = group.position.distanceTo(target.position);
@@ -389,6 +424,15 @@ export function Player() {
               <sphereGeometry args={[0.08, 8, 6]} />
               <meshStandardMaterial color={TRIM_COLOR} />
             </mesh>
+            <mesh position={[0, -0.36, 0.09]}>
+              <cylinderGeometry args={[0.045, 0.055, 0.14, 8]} />
+              <meshStandardMaterial color={TRIM_COLOR} />
+            </mesh>
+            <mesh position={[0, -0.36, 0.09]}>
+              <sphereGeometry args={[0.065, 8, 6]} />
+              <meshBasicMaterial color="#ffe2b0" toneMapped={false} />
+            </mesh>
+            <pointLight ref={lanternRef} position={[0, -0.32, 0.18]} color={LANTERN_COLOR} intensity={LANTERN_INTENSITY} distance={LANTERN_DISTANCE} decay={LANTERN_DECAY} />
           </group>
         </group>
         <group ref={rightArmRef} position={[0.32, 0.65, 0]}>

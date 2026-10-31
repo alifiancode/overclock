@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Color, InstancedMesh, Object3D, Vector3 } from 'three';
 import { projectiles, updateProjectiles, TRAVEL_DURATION, MAX_PROJECTILES } from '../systems/projectiles.ts';
@@ -9,6 +9,11 @@ const colorScratch = new Color();
 
 export function Projectiles() {
     const meshRef = useRef<InstancedMesh>(null!);
+
+    useLayoutEffect(() => {
+        meshRef.current.setColorAt(0, colorScratch.set('#ffffff'));
+        meshRef.current.count = 0;
+    }, []);
 
     useFrame((_, delta) => {
         updateProjectiles(delta);
