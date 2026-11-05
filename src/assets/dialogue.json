@@ -1,0 +1,72 @@
+[
+  {
+    "event": "run_start",
+    "lines": [
+      "Danger Dial locked in. Here we go.",
+      "Diagnostics green across the board. Go time.",
+      "Ready when you are.",
+      "Systems online. Let's move."
+    ]
+  },
+  {
+    "event": "low_health",
+    "lines": [
+      "Careful! We might want a healer module for this.",
+      "Heads up patch yourself up if you can.",
+      "Heads up! We might want a healer module for this.",
+      "Heads up, your HP is critical.",
+      "Uh oh! We might want a healer module for this.",
+      "Uh oh, your HP is critical.",
+      "Yikes! We might want a healer module for this.",
+      "Yikes, your HP is not great."
+    ]
+  },
+  {
+    "event": "level_up",
+    "lines": [
+      "Impressive. Systems upgrading.",
+      "Level up! Not bad, really.",
+      "Level up! Solid, really.",
+      "New level. Nice work.",
+      "New level. Solid.",
+      "Nice work I felt that power spike from here.",
+      "Not bad I felt that power spike from here.",
+      "Not bad. Systems upgrading."
+    ]
+  },
+  {
+    "event": "boss_incoming",
+    "lines": [
+      "Reading a serious threat dead ahead.",
+      "Reading real trouble dead ahead.",
+      "Reading something big dead ahead.",
+      "Sensors picking up a serious threat nearby.",
+      "Sensors picking up real trouble nearby.",
+      "Sensors picking up something big nearby.",
+      "This next one won't go down easy.",
+      "Whatever that is, it's big. Stay sharp."
+    ]
+  },
+  {
+    "event": "idle",
+    "lines": [
+      "I'll just be over here, just saying.",
+      "I'll just be over here, no rush.",
+      "I'll just be over here, whenever you're ready.",
+      "Quiet out here. Too quiet.",
+      "Standing by.",
+      "Still here. just saying.",
+      "Still here. no rush.",
+      "Still here. whenever you're ready."
+    ]
+  },
+  {
+    "event": "death",
+    "lines": [
+      "...that's a wrap. Back to the Hub.",
+      "Not the ending I had planned either.",
+      "Rebooting. See you on the next run.",
+      "We'll get 'em next time."
+    ]
+  }
+]
