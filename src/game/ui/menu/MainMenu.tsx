@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { world, resetRun, saveMeta } from '../../state/world.ts';
+import type { Gender } from '../../systems/human/skeleton.ts';
 import './MainMenu.css';
 
 type MainMenuProps = {
@@ -10,9 +11,11 @@ type MainMenuProps = {
 export function MainMenu({ onStart, onOpenHub }: MainMenuProps) {
     const [dial, setDial] = useState(world.dangerDial);
     const [botModule, setBotModule] = useState(world.meta.selectedBotModule);
+    const [character, setCharacter] = useState<Gender>(world.meta.character);
     const handleStart = () => {
         world.dangerDial = dial;
         world.meta.selectedBotModule = botModule;
+        world.meta.character = character;
         saveMeta();
         resetRun();
         onStart();
@@ -27,6 +30,14 @@ export function MainMenu({ onStart, onOpenHub }: MainMenuProps) {
                 {[1, 2, 3, 4, 5].map((n) => (
                     <button key={n} className={`main-menu-dial-button${n === dial ? ' active' : ''}`}
                     onClick={() => setDial(n)}>{n}</button>
+                ))}
+            </div>
+            <div className="main-menu-dial-label">Character</div>
+            <div className="main-menu-dial-row">
+                {(['male', 'female'] as const).map((option) => (
+                    <button key={option} className={`main-menu-module-button${option === character ? ' active' : ''}`} onClick={() => setCharacter(option)}>
+                        {option === 'male' ? 'Male' : 'Female'}
+                    </button>
                 ))}
             </div>
             <div className="main-menu-dial-label">Bot Module</div>

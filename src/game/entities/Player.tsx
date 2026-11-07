@@ -111,7 +111,7 @@ export function Player() {
   const inputRef = useRef<RigInput | null>(null);
   const stateRef = useRef<PlayerState | null>(null);
   const eventsRef = useRef<RigEvents | null>(null);
-  if (rigRef.current === null) rigRef.current = createPlayerRig();
+  if (rigRef.current === null) rigRef.current = createPlayerRig(world.meta.character);
   if (inputRef.current === null) inputRef.current = createRigInput();
   if (stateRef.current === null) stateRef.current = createState();
   if (eventsRef.current === null) {

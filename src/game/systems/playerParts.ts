@@ -1,6 +1,7 @@
-import { BufferGeometry, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, SphereGeometry } from 'three';
-import { drum, ellipsoid, fuse, limbGeometry, place, revolve, slab, tube } from './bodyGeo.ts';
-import { BODY } from './humanoid.ts';
+import { Bone, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Skeleton, SkinnedMesh, SphereGeometry, type BufferGeometry } from 'three';
+import { ellipsoid, fuse, place, slab, tube } from './bodyGeo.ts';
+import { bodyMesher } from './human/body.ts';
+import { BONE_NAMES, BUILDS, boneDefs, type Build, type Gender } from './human/skeleton.ts';
 
 export const PALETTE = {
     skin: '#e2ab84',
@@ -21,6 +22,7 @@ export const PALETTE = {
 } as const;
 
 export type PlayerMaterials = {
+    body: MeshStandardMaterial;
     skin: MeshStandardMaterial;
     hair: MeshStandardMaterial;
     jacket: MeshStandardMaterial;
@@ -58,6 +60,7 @@ let materials: PlayerMaterials | null = null;
 export function playerMaterials(): PlayerMaterials {
     if (materials) return materials;
     materials = {
+        body: new MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0 }),
         skin: solid(PALETTE.skin, 0.7),
         hair: solid(PALETTE.hair, 0.9),
         jacket: solid(PALETTE.jacket, 0.8),
@@ -95,27 +98,12 @@ export function accentMaterial(color: string): MeshStandardMaterial {
 }
 
 export type PlayerGeometry = {
-    pelvis: BufferGeometry;
-    belt: BufferGeometry;
-    thigh: BufferGeometry;
-    shin: BufferGeometry;
-    boot: BufferGeometry;
-    torso: BufferGeometry;
-    torsoGear: BufferGeometry;
-    torsoGlow: BufferGeometry;
+    body: BufferGeometry;
+    gear: BufferGeometry;
+    glow: BufferGeometry;
     shoulderGlow: BufferGeometry;
-    neck: BufferGeometry;
-    head: BufferGeometry;
-    hair: BufferGeometry;
-    visor: BufferGeometry;
-    upperArm: BufferGeometry;
-    sleeveHem: BufferGeometry;
-    foreArm: BufferGeometry;
-    cuff: BufferGeometry;
-    palm: [BufferGeometry, BufferGeometry];
-    thumb: [BufferGeometry, BufferGeometry];
-    index: [BufferGeometry, BufferGeometry, BufferGeometry];
-    bank: [[BufferGeometry, BufferGeometry, BufferGeometry], [BufferGeometry, BufferGeometry, BufferGeometry]];
+    headset: BufferGeometry;
+    headsetGlow: BufferGeometry;
     lamp: BufferGeometry;
     lens: BufferGeometry;
     flame: BufferGeometry;
@@ -123,243 +111,58 @@ export type PlayerGeometry = {
     crate: BufferGeometry;
 };
 
-export const HAND = {
-    scale: 1.15,
-    thumbBase: [0.034, -0.03, 0.008] as const,
-    indexBase: [0.03, -0.094, 0] as const,
-    bankBase: [-0.009, -0.094, 0] as const,
-    thumbLength: [0.04, 0.033] as const,
-    indexLength: [0.04, 0.025, 0.021] as const,
-    bankLength: [0.042, 0.027, 0.021] as const,
-};
-
-function finger(length: number, radiusTop: number, radiusBottom: number): BufferGeometry {
-    return limbGeometry({
-        length,
-        radii: [
-            [0, radiusTop],
-            [1, radiusBottom],
-        ],
-        rings: 1,
-        sides: 6,
-        topCap: 0.6,
-        bottomCap: 1,
-    });
-}
-
-function bankSegment(side: number, index: 0 | 1 | 2): BufferGeometry {
-    const base = HAND.bankLength[index];
-    const scales = [1, 0.95, 0.8];
-    const offsets = [0.02, -0.001, -0.02];
-    const radius = [0.0088, 0.0078, 0.0068][index];
-    const parts: BufferGeometry[] = [];
-    for (let i = 0; i < 3; i++) {
-        const piece = finger(base * scales[i], radius * (i === 2 ? 0.88 : 1), radius * 0.86);
-        parts.push(place(piece, side * offsets[i], 0, 0));
-    }
-    return fuse(parts);
-}
-
-function palmGeometry(side: number): BufferGeometry {
-    return fuse([
-        ellipsoid(0.04, 0.05, 0.0185, 12, 8).translate(0, -0.047, 0),
-        ellipsoid(0.016, 0.024, 0.014, 8, 6).translate(side * 0.028, -0.034, 0.012),
-        ellipsoid(0.034, 0.02, 0.016, 8, 6).translate(0, -0.088, -0.002),
-    ]);
-}
-
-export function createGeometry(): PlayerGeometry {
-    const pelvis = fuse([
-        revolve(
-            [
-                [0, -0.118],
-                [0.095, -0.112],
-                [0.14, -0.07],
-                [0.156, -0.01],
-                [0.152, 0.05],
-                [0.138, 0.1],
-                [0.06, 0.112],
-                [0, 0.114],
-            ],
-            20,
-            1.1,
-            0.78
-        ),
-    ]);
-    const belt = fuse([
-        drum(0.178, 0.05, 0.128, 20).translate(0, 0.085, 0),
-        slab(0.05, 0.04, 0.02).translate(0, 0.085, 0.13),
-        place(slab(0.05, 0.07, 0.05), 0.15, 0.04, 0.02, 0, 0, 0.12),
-        place(slab(0.05, 0.07, 0.05), -0.15, 0.04, 0.02, 0, 0, -0.12),
-        slab(0.06, 0.06, 0.04).translate(0, 0.07, -0.14),
-    ]);
-    const thigh = limbGeometry({
-        length: BODY.thigh,
-        radii: [
-            [0, 0.083],
-            [0.12, 0.09],
-            [0.45, 0.076],
-            [0.8, 0.061],
-            [1, 0.056],
-        ],
-        rings: 8,
-        sides: 12,
-    });
-    const shin = limbGeometry({
-        length: BODY.shin,
-        radii: [
-            [0, 0.057],
-            [0.18, 0.059],
-            [0.55, 0.046],
-            [1, 0.037],
-        ],
-        rings: 8,
-        sides: 12,
-    });
-    const boot = fuse([
-        tube(0.052, 0.047, 0.17, 12).translate(0, 0.045, -0.004),
-        ellipsoid(0.048, 0.04, 0.12, 12, 8).translate(0, -0.045, 0.05),
-        ellipsoid(0.046, 0.034, 0.05, 10, 6).translate(0, -0.052, 0.155),
-        ellipsoid(0.044, 0.04, 0.045, 10, 6).translate(0, -0.05, -0.04),
-        slab(0.092, 0.016, 0.27).translate(0, -0.077, 0.045),
-    ]);
-    const torso = fuse([
-        revolve(
-            [
-                [0, -0.078],
-                [0.14, -0.072],
-                [0.138, -0.03],
-                [0.13, 0],
-                [0.134, 0.05],
-                [0.142, 0.12],
-                [0.157, 0.21],
-                [0.166, 0.29],
-                [0.16, 0.35],
-                [0.138, 0.395],
-                [0.095, 0.43],
-                [0.064, 0.452],
-                [0, 0.468],
-            ],
-            22,
-            1.22,
-            0.74
-        ),
-        ellipsoid(0.064, 0.06, 0.06, 10, 8).translate(BODY.shoulderX - 0.002, BODY.shoulderY - 0.01, -0.004),
-        ellipsoid(0.064, 0.06, 0.06, 10, 8).translate(-BODY.shoulderX + 0.002, BODY.shoulderY - 0.01, -0.004),
-        ellipsoid(0.088, 0.032, 0.072, 12, 6).translate(0, 0.438, 0),
-    ]);
-    const torsoGear = fuse([
-        place(slab(0.27, 0.21, 0.05), 0, 0.2, 0.112, -0.05),
-        slab(0.07, 0.07, 0.045).translate(-0.085, 0.14, 0.15),
-        slab(0.07, 0.07, 0.045).translate(0.0, 0.14, 0.15),
-        slab(0.07, 0.07, 0.045).translate(0.085, 0.14, 0.15),
-        slab(0.31, 0.34, 0.13).translate(0, 0.205, -0.165),
-        place(tube(0.06, 0.06, 0.29, 10), 0, 0.395, -0.165, 0, 0, Math.PI / 2),
-    ]);
-    const torsoGlow = fuse([ellipsoid(0.03, 0.03, 0.02, 8, 6).translate(0.07, 0.3, 0.14), tube(0.022, 0.022, 0.3, 8).translate(0.105, 0.2, -0.24)]);
+function createGeometry(gender: Gender): PlayerGeometry {
+    const b = BUILDS[gender];
+    const fem = gender === 'female';
+    const hs = fem ? 0.93 : 1;
+    const gear = fem
+        ? fuse([
+              place(slab(0.1, 0.12, 0.028), 0, 0.25, 0.158, -0.1),
+              place(slab(0.05, 0.07, 0.04), 0.125, -0.03, 0.06, 0, 0.6, 0),
+              place(slab(0.05, 0.07, 0.04), -0.125, -0.03, 0.06, 0, -0.6, 0),
+              slab(0.06, 0.06, 0.04).translate(0, -0.03, -0.13),
+              slab(0.28, 0.31, 0.115).translate(0, 0.19, -0.152),
+              place(tube(0.055, 0.055, 0.26, 10), 0, 0.37, -0.152, 0, 0, Math.PI / 2),
+          ])
+        : fuse([
+              place(slab(0.27, 0.2, 0.036), 0, 0.235, 0.158, -0.05),
+              slab(0.07, 0.07, 0.04).translate(-0.085, 0.13, 0.165),
+              slab(0.07, 0.07, 0.04).translate(0, 0.13, 0.165),
+              slab(0.07, 0.07, 0.04).translate(0.085, 0.13, 0.165),
+              place(slab(0.05, 0.07, 0.05), 0.16, -0.03, 0.05, 0, 0.5, 0),
+              place(slab(0.05, 0.07, 0.05), -0.16, -0.03, 0.05, 0, -0.5, 0),
+              slab(0.06, 0.06, 0.04).translate(0, -0.03, -0.14),
+              slab(0.31, 0.34, 0.12).translate(0, 0.205, -0.158),
+              place(tube(0.06, 0.06, 0.29, 10), 0, 0.395, -0.158, 0, 0, Math.PI / 2),
+          ]);
+    const glow = fem
+        ? fuse([ellipsoid(0.02, 0.02, 0.012, 8, 6).translate(0, 0.255, 0.178), tube(0.02, 0.02, 0.28, 8).translate(0.095, 0.19, -0.218)])
+        : fuse([ellipsoid(0.03, 0.03, 0.02, 8, 6).translate(0.075, 0.3, 0.182), tube(0.022, 0.022, 0.3, 8).translate(0.105, 0.2, -0.222)]);
     const shoulderGlow = fuse([
-        slab(0.07, 0.012, 0.05).translate(BODY.shoulderX + 0.012, BODY.shoulderY + 0.05, -0.004),
-        slab(0.07, 0.012, 0.05).translate(-BODY.shoulderX - 0.012, BODY.shoulderY + 0.05, -0.004),
+        slab(0.07, 0.012, 0.05).translate(b.shoulderX + 0.014, b.shoulderY + 0.064, -0.004),
+        slab(0.07, 0.012, 0.05).translate(-b.shoulderX - 0.014, b.shoulderY + 0.064, -0.004),
     ]);
-    const neck = limbGeometry({
-        length: 0.08,
-        radii: [
-            [0, 0.047],
-            [1, 0.041],
-        ],
-        rings: 2,
-        sides: 10,
-        topCap: 0.4,
-        bottomCap: 0.4,
-    });
-    const head = fuse([
-        ellipsoid(0.088, 0.106, 0.098, 18, 12).translate(0, 0.103, -0.004),
-        ellipsoid(0.07, 0.062, 0.078, 14, 10).translate(0, 0.04, 0.016),
-        ellipsoid(0.013, 0.021, 0.03, 8, 6).translate(0, 0.075, 0.095),
-        ellipsoid(0.03, 0.022, 0.03, 8, 6).translate(0, 0.002, 0.07),
-        ellipsoid(0.072, 0.014, 0.032, 10, 6).translate(0, 0.122, 0.07),
-        ellipsoid(0.011, 0.027, 0.019, 8, 6).translate(0.087, 0.09, -0.01),
-        ellipsoid(0.011, 0.027, 0.019, 8, 6).translate(-0.087, 0.09, -0.01),
-    ]);
-    const hairShell = new SphereGeometry(1, 22, 14, 0, Math.PI * 2, 0, 1.6);
-    hairShell.scale(0.095, 0.115, 0.107);
-    place(hairShell, 0, 0.105, -0.006, -0.42);
-    const visorBand = new SphereGeometry(1, 20, 3, Math.PI / 2 - 0.95, 1.9, 1.55, 0.23);
-    visorBand.scale(0.0935, 0.111, 0.104);
-    visorBand.translate(0, 0.103, -0.004);
-    const upperArm = limbGeometry({
-        length: BODY.upperArm,
-        radii: [
-            [0, 0.052],
-            [0.3, 0.055],
-            [0.75, 0.044],
-            [1, 0.04],
-        ],
-        rings: 8,
-        sides: 12,
-        bottomCap: 0,
-    });
-    const sleeveHem = tube(0.047, 0.047, 0.034, 12).translate(0, -BODY.upperArm + 0.012, 0);
-    const foreArm = limbGeometry({
-        length: BODY.foreArm,
-        radii: [
-            [0, 0.042],
-            [0.2, 0.045],
-            [0.7, 0.034],
-            [1, 0.028],
-        ],
-        rings: 8,
-        sides: 12,
-        bottomCap: 0.4,
-    });
-    const cuff = tube(0.037, 0.034, 0.045, 12).translate(0, -BODY.foreArm + 0.035, 0);
-    const lamp = fuse([
-        tube(0.026, 0.03, 0.075, 10).translate(0, -0.045, -0.052),
-        slab(0.07, 0.012, 0.03).translate(0, -0.015, -0.03),
-    ]);
+    const earY = 0.092 * hs;
+    const headset = fuse([place(tube(0.026, 0.026, 0.016, 14), 0.089, earY, -0.004, 0, 0, Math.PI / 2), place(tube(0.03, 0.03, 0.004, 14), 0.082, earY, -0.004, 0, 0, Math.PI / 2)]);
+    const headsetGlow = place(tube(0.013, 0.013, 0.004, 10), 0.098, earY, -0.004, 0, 0, Math.PI / 2);
+    const lamp = fuse([tube(0.026, 0.03, 0.075, 10).translate(0, -0.045, -0.052), slab(0.07, 0.012, 0.03).translate(0, -0.015, -0.03)]);
     const lens = new SphereGeometry(0.024, 10, 8);
     lens.translate(0, -0.088, -0.052);
     const flame = fuse([place(new SphereGeometry(0.1, 8, 6).scale(1, 1, 1.6), 0, 0, 0.1), place(new SphereGeometry(0.05, 8, 6), 0, 0, 0.02)]);
     const coin = place(tube(0.032, 0.032, 0.006, 14), 0, 0, 0, Math.PI / 2);
     const crate = fuse([slab(0.1, 0.05, 0.07), slab(0.104, 0.008, 0.074).translate(0, 0.028, 0)]);
-    return {
-        pelvis,
-        belt,
-        thigh,
-        shin,
-        boot,
-        torso,
-        torsoGear,
-        torsoGlow,
-        shoulderGlow,
-        neck,
-        head,
-        hair: hairShell,
-        visor: visorBand,
-        upperArm,
-        sleeveHem,
-        foreArm,
-        cuff,
-        palm: [palmGeometry(1), palmGeometry(-1)],
-        thumb: [finger(HAND.thumbLength[0], 0.0108, 0.0098), finger(HAND.thumbLength[1], 0.0092, 0.0074)],
-        index: [finger(HAND.indexLength[0], 0.0092, 0.0084), finger(HAND.indexLength[1], 0.0083, 0.0077), finger(HAND.indexLength[2], 0.0076, 0.0058)],
-        bank: [
-            [bankSegment(1, 0), bankSegment(1, 1), bankSegment(1, 2)],
-            [bankSegment(-1, 0), bankSegment(-1, 1), bankSegment(-1, 2)],
-        ],
-        lamp,
-        lens,
-        flame,
-        coin,
-        crate,
-    };
+    return { body: bodyMesher(gender).toGeometry(), gear, glow, shoulderGlow, headset, headsetGlow, lamp, lens, flame, coin, crate };
 }
 
-let geometry: PlayerGeometry | null = null;
+const geometries: Partial<Record<Gender, PlayerGeometry>> = {};
 
-export function playerGeometry(): PlayerGeometry {
-    if (!geometry) geometry = createGeometry();
-    return geometry;
+export function playerGeometry(gender: Gender = 'male'): PlayerGeometry {
+    let g = geometries[gender];
+    if (!g) {
+        g = createGeometry(gender);
+        geometries[gender] = g;
+    }
+    return g;
 }
 
 export function part(geometryValue: BufferGeometry, material: MeshStandardMaterial, castShadow = false): Mesh {
@@ -368,64 +171,57 @@ export function part(geometryValue: BufferGeometry, material: MeshStandardMateri
     return mesh;
 }
 
+export type PlayerBones = { list: Bone[]; byName: Record<string, Bone> };
+
+export function createBones(build: Build, root: Group, legs: Group): PlayerBones {
+    const byName: Record<string, Bone> = {};
+    const holders: Record<string, Group | Bone> = { root, legs };
+    for (const d of boneDefs(build)) {
+        const bn = new Bone();
+        bn.name = d.name;
+        bn.position.set(d.local[0], d.local[1], d.local[2]);
+        if (d.name.startsWith('wrist')) bn.scale.setScalar(build.handScale);
+        holders[d.parent].add(bn);
+        holders[d.name] = bn;
+        byName[d.name] = bn;
+    }
+    return { list: BONE_NAMES.map((n) => byName[n]), byName };
+}
+
+export function bindBody(gender: Gender, bones: PlayerBones, root: Group): SkinnedMesh {
+    const g = playerGeometry(gender);
+    const m = playerMaterials();
+    root.updateMatrixWorld(true);
+    const skeleton = new Skeleton(bones.list);
+    const mesh = new SkinnedMesh(g.body, m.body);
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+    root.add(mesh);
+    mesh.bind(skeleton);
+    return mesh;
+}
+
 export type HandRig = {
-    wrist: Group;
-    thumb: [Group, Group];
-    index: [Group, Group, Group];
-    bank: [Group, Group, Group];
+    wrist: Bone;
+    thumb: [Bone, Bone, Bone];
+    index: [Bone, Bone, Bone];
+    middle: [Bone, Bone, Bone];
+    ring: [Bone, Bone, Bone];
+    pinky: [Bone, Bone, Bone];
     side: number;
     current: number[];
 };
 
-export function buildHand(side: number): HandRig {
-    const g = playerGeometry();
-    const m = playerMaterials();
-    const slot = side > 0 ? 0 : 1;
-    const wrist = new Group();
-    wrist.scale.setScalar(HAND.scale);
-    wrist.add(part(g.palm[slot], m.skin));
-
-    const thumbBase = new Group();
-    thumbBase.position.set(side * HAND.thumbBase[0], HAND.thumbBase[1], HAND.thumbBase[2]);
-    thumbBase.rotation.order = 'YXZ';
-    thumbBase.add(part(g.thumb[0], m.skin));
-    const thumbTip = new Group();
-    thumbTip.position.set(0, -HAND.thumbLength[0], 0);
-    thumbTip.add(part(g.thumb[1], m.skin));
-    thumbBase.add(thumbTip);
-    wrist.add(thumbBase);
-
-    const indexBase = new Group();
-    indexBase.position.set(side * HAND.indexBase[0], HAND.indexBase[1], HAND.indexBase[2]);
-    indexBase.add(part(g.index[0], m.skin));
-    const indexMid = new Group();
-    indexMid.position.set(0, -HAND.indexLength[0], 0);
-    indexMid.add(part(g.index[1], m.skin));
-    const indexTip = new Group();
-    indexTip.position.set(0, -HAND.indexLength[1], 0);
-    indexTip.add(part(g.index[2], m.skin));
-    indexMid.add(indexTip);
-    indexBase.add(indexMid);
-    wrist.add(indexBase);
-
-    const bankBase = new Group();
-    bankBase.position.set(side * HAND.bankBase[0], HAND.bankBase[1], HAND.bankBase[2]);
-    bankBase.add(part(g.bank[slot][0], m.skin));
-    const bankMid = new Group();
-    bankMid.position.set(0, -HAND.bankLength[0], 0);
-    bankMid.add(part(g.bank[slot][1], m.skin));
-    const bankTip = new Group();
-    bankTip.position.set(0, -HAND.bankLength[1], 0);
-    bankTip.add(part(g.bank[slot][2], m.skin));
-    bankMid.add(bankTip);
-    bankBase.add(bankMid);
-    wrist.add(bankBase);
-
+export function bindHand(bones: PlayerBones, side: number): HandRig {
+    const tag = side > 0 ? 'L' : 'R';
+    const grab = (f: string): [Bone, Bone, Bone] => [bones.byName[`${f}0${tag}`], bones.byName[`${f}1${tag}`], bones.byName[`${f}2${tag}`]];
     return {
-        wrist,
-        thumb: [thumbBase, thumbTip],
-        index: [indexBase, indexMid, indexTip],
-        bank: [bankBase, bankMid, bankTip],
+        wrist: bones.byName[`wrist${tag}`],
+        thumb: grab('thumb'),
+        index: grab('index'),
+        middle: grab('middle'),
+        ring: grab('ring'),
+        pinky: grab('pinky'),
         side,
         current: new Array<number>(12).fill(0),
     };
@@ -434,12 +230,20 @@ export function buildHand(side: number): HandRig {
 export function applyHand(hand: HandRig) {
     const c = hand.current;
     const s = hand.side;
-    hand.thumb[0].rotation.set(-c[2], s * c[1], s * c[0]);
-    hand.thumb[1].rotation.x = -c[3];
-    hand.index[0].rotation.set(-c[4], 0, -s * c[10] * 0.16);
+    const spread = c[10];
+    hand.thumb[0].rotation.set(-c[2] * 0.5, s * c[1], s * c[0]);
+    hand.thumb[1].rotation.x = -(c[2] * 0.5 + c[3] * 0.35);
+    hand.thumb[2].rotation.x = -c[3] * 0.8;
+    hand.index[0].rotation.set(-c[4], 0, -s * spread * 0.16);
     hand.index[1].rotation.x = -c[5];
     hand.index[2].rotation.x = -c[6];
-    hand.bank[0].rotation.set(-c[7], 0, s * c[10] * 0.1);
-    hand.bank[1].rotation.x = -c[8];
-    hand.bank[2].rotation.x = -c[9];
+    hand.middle[0].rotation.set(-(c[4] * 0.35 + c[7] * 0.65), 0, -s * spread * 0.05);
+    hand.middle[1].rotation.x = -(c[5] * 0.3 + c[8] * 0.7);
+    hand.middle[2].rotation.x = -(c[6] * 0.3 + c[9] * 0.7);
+    hand.ring[0].rotation.set(-c[7], 0, s * spread * 0.08);
+    hand.ring[1].rotation.x = -c[8];
+    hand.ring[2].rotation.x = -c[9];
+    hand.pinky[0].rotation.set(-c[7] * 1.08, 0, s * spread * 0.16);
+    hand.pinky[1].rotation.x = -c[8] * 1.08;
+    hand.pinky[2].rotation.x = -c[9] * 1.1;
 }

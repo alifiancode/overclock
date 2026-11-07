@@ -1,10 +1,8 @@
 import { Euler, Group, Mesh, Object3D, PointLight, Quaternion, SphereGeometry, Vector3 } from 'three';
 import { WEAPON_ORDER, type WeaponId } from '../data/weapons.ts';
 import {
-    BODY,
     HAND_POSE_SIZE,
     POSES,
-    STAND_HIP,
     boneQuat,
     clamp,
     createFoot,
@@ -20,7 +18,8 @@ import {
     solveTwoBone,
     wrapAngle,
 } from './humanoid.ts';
-import { applyHand, buildHand, part, playerGeometry, playerMaterials, type HandRig } from './playerParts.ts';
+import { BUILDS, type Gender } from './human/skeleton.ts';
+import { applyHand, bindBody, bindHand, createBones, part, playerGeometry, playerMaterials, type HandRig } from './playerParts.ts';
 import type { ReloadEvent } from './sfx.ts';
 import { buildWeapon, type Anchor, type Grip, type PoseKey, type ReloadStep, type WeaponModel } from './weaponModels.ts';
 
@@ -172,76 +171,35 @@ function hitSphere(): SphereGeometry {
     return hitGeometry;
 }
 
-export function createPlayerRig(): PlayerRig {
-    const g = playerGeometry();
+export function createPlayerRig(gender: Gender = 'male'): PlayerRig {
+    const g = playerGeometry(gender);
     const m = playerMaterials();
+    const B = BUILDS[gender];
+    const standHip = B.ankle + B.shin + B.thigh;
 
     const root = new Group();
     root.position.y = 0.3;
     const legs = new Group();
     root.add(legs);
-    const pelvis = new Group();
-    pelvis.add(part(g.pelvis, m.pants, true));
-    pelvis.add(part(g.belt, m.trim));
-    legs.add(pelvis);
+    const bones = createBones(B, root, legs);
+    const pelvis = bones.byName.pelvis;
+    const chest = bones.byName.chest;
+    const head = bones.byName.head;
+    const hairA = bones.byName.hairA;
+    const hairB = bones.byName.hairB;
+    const thigh = [bones.byName.thighL, bones.byName.thighR];
+    const shin = [bones.byName.shinL, bones.byName.shinR];
+    const foot = [bones.byName.footL, bones.byName.footR];
+    const upper = [bones.byName.upperL, bones.byName.upperR];
+    const lower = [bones.byName.lowerL, bones.byName.lowerR];
+    const hands: HandRig[] = [bindHand(bones, 1), bindHand(bones, -1)];
+    bindBody(gender, bones, root);
 
-    const thigh: Group[] = [];
-    const shin: Group[] = [];
-    const foot: Group[] = [];
-    for (let i = 0; i < 2; i++) {
-        const t = new Group();
-        t.add(part(g.thigh, m.pants, true));
-        legs.add(t);
-        const s = new Group();
-        s.position.set(0, -BODY.thigh, 0);
-        s.add(part(g.shin, m.pants, true));
-        t.add(s);
-        const f = new Group();
-        f.position.set(0, -BODY.shin, 0);
-        f.add(part(g.boot, m.boots));
-        s.add(f);
-        thigh.push(t);
-        shin.push(s);
-        foot.push(f);
-    }
-
-    const chest = new Group();
-    root.add(chest);
-    chest.add(part(g.torso, m.jacket, true));
-    chest.add(part(g.torsoGear, m.gear));
-    chest.add(part(g.torsoGlow, m.orange));
+    chest.add(part(g.gear, m.gear));
+    chest.add(part(g.glow, m.orange));
     chest.add(part(g.shoulderGlow, m.cyan));
-    const neck = part(g.neck, m.skin);
-    neck.position.set(0, 0.545, 0);
-    chest.add(neck);
-    const head = new Group();
-    head.position.set(0, 0.53, 0);
-    head.add(part(g.head, m.skin, true));
-    head.add(part(g.hair, m.hair));
-    head.add(part(g.visor, m.cyan));
-    chest.add(head);
-
-    const upper: Group[] = [];
-    const lower: Group[] = [];
-    const hands: HandRig[] = [];
-    for (let i = 0; i < 2; i++) {
-        const side = i === 0 ? 1 : -1;
-        const u = new Group();
-        u.add(part(g.upperArm, m.jacket, true));
-        u.add(part(g.sleeveHem, m.jacketDark));
-        chest.add(u);
-        const l = new Group();
-        l.position.set(0, -BODY.upperArm, 0);
-        l.add(part(g.foreArm, m.skin, true));
-        l.add(part(g.cuff, m.trim));
-        u.add(l);
-        const h = buildHand(side);
-        h.wrist.position.set(0, -BODY.foreArm, 0);
-        l.add(h.wrist);
-        upper.push(u);
-        lower.push(l);
-        hands.push(h);
-    }
+    head.add(part(g.headset, m.gear));
+    head.add(part(g.headsetGlow, m.cyan));
 
     const lantern = new PointLight('#ffb45e', 24, 15, 1.6);
     lantern.position.set(0, -0.3, -0.05);
@@ -328,6 +286,10 @@ export function createPlayerRig(): PlayerRig {
     let reachKind = 0;
     let reachItem = '';
     let flinch = 0;
+    let tailA = 0;
+    let tailB = 0;
+    let tailSideA = 0;
+    let tailSideB = 0;
     let flinchSide = 1;
     let deathT = 0;
     let prevReload = -1;
@@ -383,7 +345,7 @@ export function createPlayerRig(): PlayerRig {
     function solveLeg(i: number) {
         const s = i === 0 ? 1 : -1;
         pole.set(s * Math.sin(TOE_OUT), 0, Math.cos(TOE_OUT));
-        solveTwoBone(hip[i], ankle[i], BODY.thigh, BODY.shin, pole, mid, end);
+        solveTwoBone(hip[i], ankle[i], B.thigh, B.shin, pole, mid, end);
         boneQuat(qa, hip[i], mid, pole);
         thigh[i].position.copy(hip[i]);
         thigh[i].quaternion.copy(qa);
@@ -394,9 +356,9 @@ export function createPlayerRig(): PlayerRig {
 
     function solveArm(i: number, target: Vector3, orientation: Quaternion) {
         const side = i === 0 ? 1 : -1;
-        shoulder.set(side * BODY.shoulderX, BODY.shoulderY, 0);
+        shoulder.set(side * B.shoulderX, B.shoulderY, 0);
         pole.set(side * 0.5, -1, -0.35).normalize();
-        const miss = solveTwoBone(shoulder, target, BODY.upperArm, BODY.foreArm, pole, mid, end);
+        const miss = solveTwoBone(shoulder, target, B.upperArm, B.foreArm, pole, mid, end);
         reachError[i] = miss;
         vd.copy(pole).negate();
         boneQuat(qa, shoulder, mid, vd);
@@ -519,9 +481,9 @@ export function createPlayerRig(): PlayerRig {
         const bobWave = Math.cos(2 * centered);
         const bob = lerp(1, -1, gait.run) * gait.bob * bobWave;
         const breathing = Math.sin(time * 1.4) * 0.0035;
-        let hipY = STAND_HIP - 0.014 + breathing - moveW * gait.crouch + moveW * bob;
+        let hipY = standHip - 0.014 + breathing - moveW * gait.crouch + moveW * bob;
         hipY = lerp(hipY, 0.5, buckle);
-        hipY = lerp(hipY, STAND_HIP - 0.01, smooth(0.5, 0.95, deathP));
+        hipY = lerp(hipY, standHip - 0.01, smooth(0.5, 0.95, deathP));
         hipY -= 0.06 * reachBump;
         const sway = Math.cos(centered) * 0.022 * moveW * (1 - gait.run * 0.4);
         const pelvisYaw = Math.sin(centered) * 0.09 * moveW;
@@ -550,8 +512,8 @@ export function createPlayerRig(): PlayerRig {
             const idleZ = s * 0.035;
             const stanceX = lerp(0.108, lerp(0.1, 0.082, gait.run), moveW);
             const z = lerp(idleZ, gz, moveW);
-            const y = lerp(BODY.ankle, footState.y, moveW);
-            hip[i].set(sway + s * BODY.hipX * hipCos, hipY, -s * BODY.hipX * hipSin);
+            const y = lerp(B.ankle, footState.y, moveW);
+            hip[i].set(sway + s * B.hipX * hipCos, hipY, -s * B.hipX * hipSin);
             ankle[i].set(s * stanceX, y, z);
             const pitch = lerp(0, footState.pitch * (dir > 0 ? 1 : 0.5), moveW);
             const shinQuat = solveLeg(i);
@@ -568,7 +530,7 @@ export function createPlayerRig(): PlayerRig {
         const chestYaw = -pelvisYaw * 1.3 + legTwist * 0.25 * moveW + flinch * 0.2 * flinchSide + reachTwist;
         const chestRoll = Math.sin(time * 0.7) * 0.008 + Math.sin(centered) * 0.02 * moveW + flinch * 0.1 * flinchSide;
         const meleeTwist = meleeActive ? -0.3 * smooth(0, 0.25, meleeP) + 0.75 * smooth(0.2, 0.45, meleeP) - 0.45 * smooth(0.5, 1, meleeP) : 0;
-        chest.position.set(sway * 0.6, hipY + BODY.waist, 0);
+        chest.position.set(sway * 0.6, hipY + B.waist, 0);
         euler.set(chestPitch, chestYaw + meleeTwist, chestRoll, 'YXZ');
         chest.quaternion.setFromEuler(euler);
 
@@ -706,6 +668,18 @@ export function createPlayerRig(): PlayerRig {
         const headPitch = -chestPitch * 0.7 + 0.04 + (input.hasTarget ? aimPitch * 0.4 * aimW : 0) - 0.15 * flinch;
         euler.set(headPitch, headYaw, 0, 'YXZ');
         head.quaternion.setFromEuler(euler);
+
+        if (gender === 'female') {
+            const run = smooth(0.5, 3.5, speed) * moveW;
+            const tailDrive = 0.38 * run - headPitch * 0.8 + chestPitch * 0.4 + Math.sin(2 * centered) * 0.1 * run;
+            const tailSide = Math.sin(centered) * 0.22 * moveW - headYaw * 0.3;
+            tailA = damp(tailA, tailDrive, 11, dt);
+            tailB = damp(tailB, tailA, 7, dt);
+            tailSideA = damp(tailSideA, tailSide, 10, dt);
+            tailSideB = damp(tailSideB, tailSideA, 6, dt);
+            hairA.rotation.set(tailA * 0.6, 0, tailSideA * 0.6);
+            hairB.rotation.set((tailB - tailA) * 1.2 + 0.05, 0, (tailSideB - tailSideA) * 1.2);
+        }
 
         hitFlash.scale.setScalar(flinch > 0.03 ? flinch : 0);
 

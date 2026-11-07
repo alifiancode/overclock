@@ -9,6 +9,7 @@ import { randomStart } from '../systems/obstacles.ts';
 import { createRng } from '../systems/random.ts';
 import { getTerrainHeight } from '../systems/terrain.ts';
 import { botShieldBreak, playLevelUp, playerDeath, playerHurt } from '../systems/sfx.ts';
+import type { Gender } from '../systems/human/skeleton.ts';
 
 const CURRENCY_STORAGE_KEY = 'overclock-currency';
 const META_STORAGE_KEY = 'overclock-meta';
@@ -27,6 +28,7 @@ type Meta = {
     xpBoostLevel: number;
     unlockedBotModules: BotModule[],
     selectedBotModule: BotModule;
+    character: Gender;
 }
 
 function defaultMeta(): Meta {
@@ -39,6 +41,7 @@ function defaultMeta(): Meta {
         xpBoostLevel: 0,
         unlockedBotModules: ['turret'],
         selectedBotModule: BOT_MODULE_DEFAULT,
+        character: 'male',
     };
 }
 
@@ -46,7 +49,9 @@ function loadMeta(): Meta {
     const raw = localStorage.getItem(META_STORAGE_KEY);
     if (!raw) return defaultMeta();
     try {
-        return { ...defaultMeta(), ...JSON.parse(raw) };
+        const meta: Meta = { ...defaultMeta(), ...JSON.parse(raw) };
+        if (meta.character !== 'male' && meta.character !== 'female') meta.character = 'male';
+        return meta;
     } catch {
         return defaultMeta();
     }
