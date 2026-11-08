@@ -1,6 +1,7 @@
 import { Bone, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Skeleton, SkinnedMesh, SphereGeometry, type BufferGeometry } from 'three';
-import { ellipsoid, fuse, place, slab, tube } from './bodyGeo.ts';
+import { fuse, place, slab, tube } from './bodyGeo.ts';
 import { bodyMesher } from './human/body.ts';
+import { buildGear } from './human/gear.ts';
 import { BONE_NAMES, BUILDS, boneDefs, type Build, type Gender } from './human/skeleton.ts';
 
 export const PALETTE = {
@@ -22,7 +23,8 @@ export const PALETTE = {
 } as const;
 
 export type PlayerMaterials = {
-    body: MeshStandardMaterial;
+    bodyMats: MeshStandardMaterial[];
+    gearVC: MeshStandardMaterial;
     skin: MeshStandardMaterial;
     hair: MeshStandardMaterial;
     jacket: MeshStandardMaterial;
@@ -60,7 +62,15 @@ let materials: PlayerMaterials | null = null;
 export function playerMaterials(): PlayerMaterials {
     if (materials) return materials;
     materials = {
-        body: new MeshStandardMaterial({ vertexColors: true, roughness: 0.78, metalness: 0 }),
+        bodyMats: [
+            new MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0 }),
+            new MeshStandardMaterial({ vertexColors: true, roughness: 0.95, metalness: 0 }),
+            new MeshStandardMaterial({ vertexColors: true, roughness: 0.48, metalness: 0.04 }),
+            new MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0 }),
+            new MeshStandardMaterial({ vertexColors: true, roughness: 0.07, metalness: 0 }),
+            new MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.8 }),
+        ],
+        gearVC: new MeshStandardMaterial({ vertexColors: true, roughness: 0.86, metalness: 0.02 }),
         skin: solid(PALETTE.skin, 0.7),
         hair: solid(PALETTE.hair, 0.9),
         jacket: solid(PALETTE.jacket, 0.8),
@@ -101,7 +111,7 @@ export type PlayerGeometry = {
     body: BufferGeometry;
     gear: BufferGeometry;
     glow: BufferGeometry;
-    shoulderGlow: BufferGeometry;
+    holster: BufferGeometry;
     headset: BufferGeometry;
     headsetGlow: BufferGeometry;
     lamp: BufferGeometry;
@@ -115,34 +125,9 @@ function createGeometry(gender: Gender): PlayerGeometry {
     const b = BUILDS[gender];
     const fem = gender === 'female';
     const hs = fem ? 0.93 : 1;
-    const gear = fem
-        ? fuse([
-              place(slab(0.1, 0.12, 0.028), 0, 0.25, 0.158, -0.1),
-              place(slab(0.05, 0.07, 0.04), 0.125, -0.03, 0.06, 0, 0.6, 0),
-              place(slab(0.05, 0.07, 0.04), -0.125, -0.03, 0.06, 0, -0.6, 0),
-              slab(0.06, 0.06, 0.04).translate(0, -0.03, -0.13),
-              slab(0.28, 0.31, 0.115).translate(0, 0.19, -0.152),
-              place(tube(0.055, 0.055, 0.26, 10), 0, 0.37, -0.152, 0, 0, Math.PI / 2),
-          ])
-        : fuse([
-              place(slab(0.27, 0.2, 0.036), 0, 0.235, 0.158, -0.05),
-              slab(0.07, 0.07, 0.04).translate(-0.085, 0.13, 0.165),
-              slab(0.07, 0.07, 0.04).translate(0, 0.13, 0.165),
-              slab(0.07, 0.07, 0.04).translate(0.085, 0.13, 0.165),
-              place(slab(0.05, 0.07, 0.05), 0.16, -0.03, 0.05, 0, 0.5, 0),
-              place(slab(0.05, 0.07, 0.05), -0.16, -0.03, 0.05, 0, -0.5, 0),
-              slab(0.06, 0.06, 0.04).translate(0, -0.03, -0.14),
-              slab(0.31, 0.34, 0.12).translate(0, 0.205, -0.158),
-              place(tube(0.06, 0.06, 0.29, 10), 0, 0.395, -0.158, 0, 0, Math.PI / 2),
-          ]);
-    const glow = fem
-        ? fuse([ellipsoid(0.02, 0.02, 0.012, 8, 6).translate(0, 0.255, 0.178), tube(0.02, 0.02, 0.28, 8).translate(0.095, 0.19, -0.218)])
-        : fuse([ellipsoid(0.03, 0.03, 0.02, 8, 6).translate(0.075, 0.3, 0.182), tube(0.022, 0.022, 0.3, 8).translate(0.105, 0.2, -0.222)]);
-    const shoulderGlow = fuse([
-        slab(0.07, 0.012, 0.05).translate(b.shoulderX + 0.014, b.shoulderY + 0.064, -0.004),
-        slab(0.07, 0.012, 0.05).translate(-b.shoulderX - 0.014, b.shoulderY + 0.064, -0.004),
-    ]);
-    const earY = 0.092 * hs;
+    const parts = buildGear(gender);
+    const glow = fem ? tube(0.011, 0.011, 0.18, 8).translate(0.116, 0.3 - b.waist, -0.128) : tube(0.013, 0.013, 0.22, 8).translate(0.158, 0.27 - b.waist, -0.18);
+    const earY = 0.092 * hs * 0.93;
     const headset = fuse([place(tube(0.026, 0.026, 0.016, 14), 0.089, earY, -0.004, 0, 0, Math.PI / 2), place(tube(0.03, 0.03, 0.004, 14), 0.082, earY, -0.004, 0, 0, Math.PI / 2)]);
     const headsetGlow = place(tube(0.013, 0.013, 0.004, 10), 0.098, earY, -0.004, 0, 0, Math.PI / 2);
     const lamp = fuse([tube(0.026, 0.03, 0.075, 10).translate(0, -0.045, -0.052), slab(0.07, 0.012, 0.03).translate(0, -0.015, -0.03)]);
@@ -151,7 +136,7 @@ function createGeometry(gender: Gender): PlayerGeometry {
     const flame = fuse([place(new SphereGeometry(0.1, 8, 6).scale(1, 1, 1.6), 0, 0, 0.1), place(new SphereGeometry(0.05, 8, 6), 0, 0, 0.02)]);
     const coin = place(tube(0.032, 0.032, 0.006, 14), 0, 0, 0, Math.PI / 2);
     const crate = fuse([slab(0.1, 0.05, 0.07), slab(0.104, 0.008, 0.074).translate(0, 0.028, 0)]);
-    return { body: bodyMesher(gender).toGeometry(), gear, glow, shoulderGlow, headset, headsetGlow, lamp, lens, flame, coin, crate };
+    return { body: bodyMesher(gender).toGeometry(), gear: parts.gear, glow, holster: parts.holster, headset, headsetGlow, lamp, lens, flame, coin, crate };
 }
 
 const geometries: Partial<Record<Gender, PlayerGeometry>> = {};
@@ -193,7 +178,7 @@ export function bindBody(gender: Gender, bones: PlayerBones, root: Group): Skinn
     const m = playerMaterials();
     root.updateMatrixWorld(true);
     const skeleton = new Skeleton(bones.list);
-    const mesh = new SkinnedMesh(g.body, m.body);
+    const mesh = new SkinnedMesh(g.body, m.bodyMats);
     mesh.castShadow = true;
     mesh.frustumCulled = false;
     root.add(mesh);

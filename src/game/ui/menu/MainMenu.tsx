@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { world, resetRun, saveMeta } from '../../state/world.ts';
 import type { Gender } from '../../systems/human/skeleton.ts';
+import { playerGeometry } from '../../systems/playerParts.ts';
 import './MainMenu.css';
 
 type MainMenuProps = {
@@ -12,6 +13,12 @@ export function MainMenu({ onStart, onOpenHub }: MainMenuProps) {
     const [dial, setDial] = useState(world.dangerDial);
     const [botModule, setBotModule] = useState(world.meta.selectedBotModule);
     const [character, setCharacter] = useState<Gender>(world.meta.character);
+    useEffect(() => {
+        const timer = window.setTimeout(() => {
+            playerGeometry(character);
+        }, 120);
+        return () => window.clearTimeout(timer);
+    }, [character]);
     const handleStart = () => {
         world.dangerDial = dial;
         world.meta.selectedBotModule = botModule;

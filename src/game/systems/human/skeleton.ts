@@ -16,8 +16,8 @@ export type Build = {
 };
 
 export const BUILDS: Record<Gender, Build> = {
-    male: { gender: 'male', ankle: 0.085, shin: 0.415, thigh: 0.425, hipX: 0.098, waist: 0.1, shoulderX: 0.188, shoulderY: 0.385, neckY: 0.545, upperArm: 0.295, foreArm: 0.265, handScale: 1.15 },
-    female: { gender: 'female', ankle: 0.08, shin: 0.395, thigh: 0.405, hipX: 0.101, waist: 0.095, shoulderX: 0.162, shoulderY: 0.36, neckY: 0.508, upperArm: 0.276, foreArm: 0.25, handScale: 1.06 },
+    male: { gender: 'male', ankle: 0.08, shin: 0.43, thigh: 0.435, hipX: 0.098, waist: 0.1, shoulderX: 0.195, shoulderY: 0.39, neckY: 0.555, upperArm: 0.318, foreArm: 0.268, handScale: 1.15 },
+    female: { gender: 'female', ankle: 0.075, shin: 0.41, thigh: 0.42, hipX: 0.102, waist: 0.095, shoulderX: 0.166, shoulderY: 0.365, neckY: 0.505, upperArm: 0.298, foreArm: 0.25, handScale: 1.06 },
 };
 
 export const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky'] as const;
@@ -31,7 +31,7 @@ export const FINGERS: Record<FingerName, { at: readonly [number, number, number]
     pinky: { at: [-0.03, -0.088, 0], len: [0.032, 0.02, 0.017], r: 0.0076 },
 };
 
-export const BONE_NAMES: string[] = ['pelvis', 'chest', 'head', 'hairA', 'hairB'];
+export const BONE_NAMES: string[] = ['pelvis', 'chest', 'head', 'hairA', 'hairB', 'hairC'];
 for (const side of ['L', 'R']) {
     BONE_NAMES.push(`thigh${side}`, `shin${side}`, `foot${side}`, `upper${side}`, `lower${side}`, `wrist${side}`);
     for (const f of FINGER_NAMES) for (let k = 0; k < 3; k++) BONE_NAMES.push(`${f}${k}${side}`);
@@ -58,7 +58,7 @@ export type BoneDef = { name: string; parent: string; local: [number, number, nu
 
 export const HAIR_ROOT: readonly [number, number, number] = [0, 0.145, -0.086];
 export const HAIR_TILT = 0.35;
-export const HAIR_LINK = 0.12;
+export const HAIR_LINKS: readonly [number, number] = [0.12, 0.11];
 
 export function boneDefs(b: Build): BoneDef[] {
     const defs: BoneDef[] = [];
@@ -67,7 +67,8 @@ export function boneDefs(b: Build): BoneDef[] {
     defs.push({ name: 'chest', parent: 'root', local: [0, H + b.waist, 0] });
     defs.push({ name: 'head', parent: 'chest', local: [0, b.neckY, 0] });
     defs.push({ name: 'hairA', parent: 'head', local: [HAIR_ROOT[0], HAIR_ROOT[1], HAIR_ROOT[2]] });
-    defs.push({ name: 'hairB', parent: 'hairA', local: [0, -HAIR_LINK * Math.cos(HAIR_TILT), -HAIR_LINK * Math.sin(HAIR_TILT)] });
+    defs.push({ name: 'hairB', parent: 'hairA', local: [0, -HAIR_LINKS[0] * Math.cos(HAIR_TILT), -HAIR_LINKS[0] * Math.sin(HAIR_TILT)] });
+    defs.push({ name: 'hairC', parent: 'hairB', local: [0, -HAIR_LINKS[1] * Math.cos(HAIR_TILT), -HAIR_LINKS[1] * Math.sin(HAIR_TILT)] });
     for (const side of ['L', 'R']) {
         const s = side === 'L' ? 1 : -1;
         defs.push({ name: `thigh${side}`, parent: 'legs', local: [s * b.hipX, H, 0] });

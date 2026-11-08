@@ -187,6 +187,7 @@ export function createPlayerRig(gender: Gender = 'male'): PlayerRig {
     const head = bones.byName.head;
     const hairA = bones.byName.hairA;
     const hairB = bones.byName.hairB;
+    const hairC = bones.byName.hairC;
     const thigh = [bones.byName.thighL, bones.byName.thighR];
     const shin = [bones.byName.shinL, bones.byName.shinR];
     const foot = [bones.byName.footL, bones.byName.footR];
@@ -195,11 +196,11 @@ export function createPlayerRig(gender: Gender = 'male'): PlayerRig {
     const hands: HandRig[] = [bindHand(bones, 1), bindHand(bones, -1)];
     bindBody(gender, bones, root);
 
-    chest.add(part(g.gear, m.gear));
+    chest.add(part(g.gear, m.gearVC, true));
     chest.add(part(g.glow, m.orange));
-    chest.add(part(g.shoulderGlow, m.cyan));
     head.add(part(g.headset, m.gear));
     head.add(part(g.headsetGlow, m.cyan));
+    thigh[1].add(part(g.holster, m.gearVC, true));
 
     const lantern = new PointLight('#ffb45e', 24, 15, 1.6);
     lantern.position.set(0, -0.3, -0.05);
@@ -288,8 +289,10 @@ export function createPlayerRig(gender: Gender = 'male'): PlayerRig {
     let flinch = 0;
     let tailA = 0;
     let tailB = 0;
+    let tailC = 0;
     let tailSideA = 0;
     let tailSideB = 0;
+    let tailSideC = 0;
     let flinchSide = 1;
     let deathT = 0;
     let prevReload = -1;
@@ -674,11 +677,14 @@ export function createPlayerRig(gender: Gender = 'male'): PlayerRig {
             const tailDrive = 0.38 * run - headPitch * 0.8 + chestPitch * 0.4 + Math.sin(2 * centered) * 0.1 * run;
             const tailSide = Math.sin(centered) * 0.22 * moveW - headYaw * 0.3;
             tailA = damp(tailA, tailDrive, 11, dt);
-            tailB = damp(tailB, tailA, 7, dt);
+            tailB = damp(tailB, tailA, 8, dt);
+            tailC = damp(tailC, tailB, 6, dt);
             tailSideA = damp(tailSideA, tailSide, 10, dt);
-            tailSideB = damp(tailSideB, tailSideA, 6, dt);
-            hairA.rotation.set(tailA * 0.6, 0, tailSideA * 0.6);
-            hairB.rotation.set((tailB - tailA) * 1.2 + 0.05, 0, (tailSideB - tailSideA) * 1.2);
+            tailSideB = damp(tailSideB, tailSideA, 7, dt);
+            tailSideC = damp(tailSideC, tailSideB, 5, dt);
+            hairA.rotation.set(tailA * 0.5, 0, tailSideA * 0.5);
+            hairB.rotation.set((tailB - tailA) * 1.1 + 0.04, 0, (tailSideB - tailSideA) * 1.1);
+            hairC.rotation.set((tailC - tailB) * 1.2 + 0.05, 0, (tailSideC - tailSideB) * 1.2);
         }
 
         hitFlash.scale.setScalar(flinch > 0.03 ? flinch : 0);
